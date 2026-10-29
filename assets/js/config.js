@@ -3,7 +3,6 @@
 export const SUPABASE_URL = 'https://sqqtcshgfriwinpvvszp.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_WMn_9QyZsI4dk7eihcBDow_tPK5JP4a';
 
-export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 export const SCOPES_LOGIN = 'openid email profile';
 
 export const DIAS_LETIVOS_PADRAO = 200;

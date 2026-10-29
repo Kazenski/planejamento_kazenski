@@ -179,6 +179,13 @@ Gráficos esperados, com dados do próprio banco:
 - Painel: barras empilhadas por categoria de dia (letivo, feriado, recesso/ponto, atividade pedagógica, evento extra) e tabela de aulas por disciplina no ano (respeita o calendário de cada colégio).
 - Materiais: o indicador de conexão do Drive agora confere a permissão no Google (`tokeninfo`), e a tela mostra as permissões recebidas.
 
+**Versão 0.3 (sem Drive, materiais no Supabase Storage):**
+- Migração `0003_storage_materiais.sql`: buckets privados `materiais` (limite 200 MB) e `modelos` (50 MB). Políticas de storage por dono: o caminho começa com o `user_id`.
+- Caminhos: `<bucket>/<user_id>/<modelo|material>/<arquivo>`. Em `fontes_material.storage_path` fica `<bucket>/<caminho>`.
+- Tela de Materiais envia, lista, abre (link assinado de 5 min) e exclui pelo navegador. Sem integração com Drive. O login continua só com Google.
+- Os cinco arquivos de `anexos/` (dois modelos `.docx` e três PDFs de referência) foram enviados por script com a chave de serviço, no caminho do usuário Edu.
+- Próximo passo para os livros: extrair texto, dividir em trechos e indexar (pgvector). O Edu vai acrescentar PDFs de conteúdo em `anexos/`.
+
 **Acesso de teste (TEMPORÁRIO):**
 - Formulário de e-mail e senha na tela de login (bloco `<details id="acesso-teste">` em `index.html`, funções `entrarComSenha` em `auth.js` e listener em `app.js`). Marcado com comentários "TEMPORÁRIO".
 - Usuário de teste: `teste@planejamento-kazenski.com` (criado no Supabase Auth, e-mail confirmado).
