@@ -199,6 +199,10 @@ Gráficos esperados, com dados do próprio banco:
 - Tela de Materiais: classificação editável (tipo, área geral, área específica, disciplinas, resumo), aplicação da sugestão da IA, indexação automática no envio e botão de indexar.
 - Seletor "Base para a IA" na geração (anual, mensal e diário): só os materiais marcados são consultados, com observações para a IA. Materiais sugeridos aparecem marcados quando a disciplina coincide.
 - Dados de teste ficaram só na conta de teste (colégio "Colégio Teste", turma "1º A" e o material do Caderno 3).
+- **Catálogo de habilidades (usuário Edu):** 129 habilidades gravadas em `habilidades`, a partir do texto da BNCC Computação (inclui EF01 a EF09, EF15, EF69 e EM13CO01 a EM13CO26). Origem: "BNCC Computação". Eixos: Pensamento Computacional (49), Mundo Digital (45), Cultura Digital (34) e 1 com eixo não identificado (conferir). Método: a expressão regular encontra os códigos no texto, e a IA só escreve a descrição a partir do trecho do PDF. Código fora do documento é descartado.
+- Pendente: a BNCC declara 141 habilidades e o texto extraído tem 129 códigos. Conferir as 12 restantes no PDF. O Currículo de Educação Digital não trouxe códigos extras.
+- Pendente: habilidades das trilhas técnicas do Caderno 3, se houver códigos no documento.
+- Pendente: indexar no site os três PDFs do usuário Edu (Currículo de Educação Digital, Caderno 3 e BNCC). Os trechos são gerados com a conta do usuário.
 
 **Acesso de teste (TEMPORÁRIO):**
 - Formulário de e-mail e senha na tela de login (bloco `<details id="acesso-teste">` em `index.html`, funções `entrarComSenha` em `auth.js` e listener em `app.js`). Marcado com comentários "TEMPORÁRIO".
