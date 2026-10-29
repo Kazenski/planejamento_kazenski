@@ -1,6 +1,7 @@
 import { listar, inserirVarios, excluir, getConfig, setConfig } from './db.js';
 import { esc, toast, mostrarErro, carregando } from './ui.js';
 import { conectarDrive, getSessao } from './auth.js';
+import { DRIVE_SCOPE } from './config.js';
 
 const API_DRIVE = 'https://www.googleapis.com/drive/v3/files';
 
@@ -13,23 +14,64 @@ export function extrairIdPasta(texto) {
   return /^[A-Za-z0-9_-]{10,}$/.test(t) ? t : null;
 }
 
+// Confere, no próprio Google, se o token atual tem a permissão de leitura do Drive.
+async function statusDrive(sessao) {
+  const token = sessao?.provider_token;
+  if (!token) return { ok: false, motivo: 'sem_token' };
+  try {
+    const r = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${encodeURIComponent(token)}`);
+    if (!r.ok) return { ok: false, motivo: 'token_expirado' };
+    const info = await r.json();
+    const escopos = String(info.scope || '').split(' ');
+    return { ok: escopos.includes(DRIVE_SCOPE), motivo: escopos.includes(DRIVE_SCOPE) ? '' : 'sem_escopo', escopos };
+  } catch {
+    // Se a verificação não puder ser feita no navegador, deixa a própria chamada ao Drive decidir.
+    return { ok: true, motivo: '' };
+  }
+}
+
+async function erroDrive(resp) {
+  const corpo = await resp.json().catch(() => ({}));
+  const reason = corpo.error?.errors?.[0]?.reason || '';
+  const detalhe = corpo.error?.message || `HTTP ${resp.status}`;
+  if (reason === 'accessNotConfigured' || /has not been used|is disabled/i.test(detalhe)) {
+    return 'A Google Drive API não está ativada no projeto do Google Cloud. Ative em APIs e serviços > Biblioteca > Google Drive API, no projeto kazenski.';
+  }
+  if (resp.status === 401) {
+    return 'A sessão do Google expirou. Clique em "Reconectar Drive".';
+  }
+  if (resp.status === 403 && /insufficient|scope/i.test(reason + detalhe)) {
+    return 'A permissão de leitura do Drive não foi concedida. Clique em "Reconectar Drive" e marque a permissão de leitura do Drive na tela do Google.';
+  }
+  if (resp.status === 403) {
+    return 'Sem acesso a esta pasta. Confirme que ela está como "Qualquer pessoa com o link: leitor".';
+  }
+  if (resp.status === 404) {
+    return 'Pasta não encontrada. Confira o link ou o ID.';
+  }
+  return `O Drive respondeu com erro. Detalhe: ${detalhe}`;
+}
+
 async function listarPastaDrive(token, pastaId) {
   const q = `'${pastaId}' in parents and trashed = false`;
   const url = `${API_DRIVE}?q=${encodeURIComponent(q)}&fields=${encodeURIComponent('files(id,name,mimeType,size)')}&pageSize=200&supportsAllDrives=true&includeItemsFromAllDrives=true`;
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (resp.status === 401 || resp.status === 403) {
-    throw new Error('O Google não autorizou a leitura do Drive. Clique em "Conectar Drive" e aceite a permissão.');
-  }
-  if (!resp.ok) throw new Error(`O Drive respondeu com erro ${resp.status}. Confira se a pasta está compartilhada com quem tem o link.`);
+  if (!resp.ok) throw new Error(await erroDrive(resp));
   const json = await resp.json();
   return json.files || [];
 }
 
 export async function telaMateriais(main) {
   const sessao = await getSessao();
-  const temDrive = Boolean(sessao?.provider_token);
+  const status = await statusDrive(sessao);
   const pastaMat = await getConfig('drive_pasta_materiais', null);
   const pastaMod = await getConfig('drive_pasta_modelos', null);
+
+  const avisoConexao = {
+    sem_token: 'O Drive ainda não foi conectado. Clique em "Conectar Drive" e aceite a permissão de leitura.',
+    token_expirado: 'A conexão com o Google expirou. Clique em "Reconectar Drive".',
+    sem_escopo: 'Você entrou no site, mas a permissão de leitura do Drive não foi concedida. Clique em "Reconectar Drive" e marque a permissão.'
+  };
 
   main.innerHTML = `
     <div class="pagina-cabecalho">
@@ -38,13 +80,13 @@ export async function telaMateriais(main) {
         <p>Os arquivos ficam no Google Drive. Aqui você registra quais entram como base da IA e quais são modelos de planejamento do colégio.</p>
       </div>
       <div class="acoes">
-        ${temDrive
-          ? '<span class="tag verde">Drive conectado</span>'
+        ${status.ok
+          ? '<span class="tag verde">Drive conectado com permissão de leitura</span> <button class="btn pequeno" id="btn-drive" type="button">Reconectar Drive</button>'
           : '<button class="btn azul" id="btn-drive" type="button">Conectar Drive</button>'}
       </div>
     </div>
 
-    ${temDrive ? '' : `<div class="aviso azul" style="margin-bottom:16px">Para listar as pastas, conecte o Drive. A permissão é só de leitura e é pedida apenas nesta tela. O login do site não depende dela.</div>`}
+    ${status.ok ? '' : `<div class="aviso azul" style="margin-bottom:16px">${esc(avisoConexao[status.motivo] || avisoConexao.sem_token)}</div>`}
 
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr));margin-bottom:20px">
       ${blocoPasta('materiais', 'Pasta de materiais-base', 'Livros, currículos e documentos de referência.', pastaMat)}
@@ -63,9 +105,11 @@ export async function telaMateriais(main) {
     const input = main.querySelector(`#pasta-${tipo}`);
     const id = extrairIdPasta(input.value);
     if (!id) return toast('Cole o link da pasta ou o ID dela.', 'erro');
-    await setConfig(`drive_pasta_${tipo === 'materiais' ? 'materiais' : 'modelos'}`, id);
-    toast('Pasta salva.', 'ok');
-    telaMateriais(main);
+    try {
+      await setConfig(`drive_pasta_${tipo}`, id);
+      toast('Pasta salva.', 'ok');
+      telaMateriais(main);
+    } catch (err) { mostrarErro(err); }
   }));
 
   main.querySelectorAll('[data-listar]').forEach((b) => b.addEventListener('click', () => listarPasta(main, b.dataset.listar, sessao)));
@@ -122,7 +166,10 @@ async function listarPasta(main, tipo, sessao) {
       } catch (err) { mostrarErro(err); }
     };
   } catch (err) {
-    area.innerHTML = `<div class="aviso">${esc(err.message)}</div>`;
+    area.innerHTML = `
+      <div class="aviso">${esc(err.message)}</div>
+      <div class="acoes" style="margin-top:10px"><button class="btn pequeno azul" data-reconectar="1" type="button">Reconectar Drive</button></div>`;
+    area.querySelector('[data-reconectar]').onclick = () => conectarDrive().catch(mostrarErro);
   }
 }
 

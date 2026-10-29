@@ -168,6 +168,9 @@ dialog.grande { width: min(1000px, calc(100vw - 32px)); }
 .cal-celula.fora { background: transparent; border-style: dashed; opacity: .55; }
 .cal-celula.fds { background: #FAFBFC; }
 .cal-celula.hoje { border: 2px solid var(--azul); }
+.cal-celula.selecionado { background: var(--laranja-suave); border: 2px solid var(--laranja); }
+.cal-grade.modo-selecao .cal-celula { cursor: pointer; }
+.cal-grade.modo-selecao .cal-celula:not(.selecionado) { border-style: dashed; }
 .cal-num { font-weight: 800; color: var(--marinho); font-size: 15px; }
 .cal-celula.fds .cal-num { color: var(--cinza); }
 .cal-legenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--cinza); margin-top: 12px; }

@@ -1,8 +1,8 @@
 import { supabase } from './supabase.js';
-import { listar, inserir, excluir, getConfig } from './db.js';
-import { esc, el, abrirModal, fecharModal, formulario, toast, mostrarErro, carregando } from './ui.js';
+import { listar, inserir, inserirVarios, excluir, getConfig } from './db.js';
+import { esc, el, abrirModal, fecharModal, formulario, toast, mostrarErro, carregando, fmtData } from './ui.js';
 import { MESES, DIAS_SEMANA, TIPOS_EVENTO, DIAS_LETIVOS_PADRAO, URL_FERIADOS } from './config.js';
-import { diasDoMes, diasDoAno, classificarDia, diasLetivos, contarLetivos, diaSemanaDe, ymd } from './regras.js';
+import { diasDoMes, diasDoAno, classificarDia, diasLetivos, contarLetivos, diaSemanaDe, ymd, ehDiaUtil } from './regras.js';
 
 const hoje = new Date();
 const estado = {
@@ -48,6 +48,7 @@ export async function telaCalendario(main) {
       </div>
       <div class="acoes">
         <label class="campo"><span>Colégio</span><select id="cal-colegio"><option value="">Visão geral (eventos para todos)</option></select></label>
+        <button class="btn" id="cal-modo" type="button">Selecionar dias</button>
         <button class="btn azul" id="cal-importar" type="button">Importar feriados nacionais</button>
         <button class="btn primary" id="cal-novo" type="button">+ Evento</button>
       </div>
@@ -59,6 +60,7 @@ export async function telaCalendario(main) {
       <button class="btn" id="cal-ano-prox" type="button">Ano ›</button>
       <button class="btn" id="cal-prox" type="button">Próximo ›</button>
     </div>
+    <div class="faixa" id="cal-barra" style="margin-bottom:16px" hidden></div>
     <div id="cal-kpis">${carregando()}</div>
     <div class="card" style="margin-top:16px">
       <div class="cal-grade" id="cal-grade"></div>
@@ -72,6 +74,8 @@ export async function telaCalendario(main) {
 
   const selectColegio = main.querySelector('#cal-colegio');
   let dados = { eventos: [], colegios: [], meta: DIAS_LETIVOS_PADRAO };
+  const selecao = new Set();
+  let modoSelecao = false;
 
   async function recarregar() {
     main.querySelector('#cal-titulo').textContent = `${MESES[estado.mes - 1]} de ${estado.ano}`;
@@ -80,6 +84,7 @@ export async function telaCalendario(main) {
       dados = await carregarDados(estado.ano);
       preencherColegios();
       desenhar();
+      atualizarBarra();
     } catch (err) { mostrarErro(err); }
   }
 
@@ -112,6 +117,7 @@ export async function telaCalendario(main) {
       </div>`;
 
     const grade = document.getElementById('cal-grade');
+    grade.classList.toggle('modo-selecao', modoSelecao);
     grade.innerHTML = DIAS_SEMANA.map((d) => `<div class="cal-dia-semana">${d}</div>`).join('');
 
     const inicio = diaSemanaDe(datasMes[0]);
@@ -125,11 +131,17 @@ export async function telaCalendario(main) {
       if (c.letivo && !c.eventos.some((e) => e.dia_letivo)) pills.push('<span class="pill-letivo">Letivo</span>');
       else if (!c.letivo && !c.eventos.length) pills.push('<span class="pill-nao-letivo">Sem aula</span>');
       const celula = el(`
-        <button type="button" class="cal-celula ${fds ? 'fds' : ''} ${c.data === hojeTexto ? 'hoje' : ''}" data-dia="${c.data}">
+        <button type="button" class="cal-celula ${fds ? 'fds' : ''} ${c.data === hojeTexto ? 'hoje' : ''} ${selecao.has(c.data) ? 'selecionado' : ''}" data-dia="${c.data}">
           <span class="cal-num">${Number(c.data.slice(8))}</span>
           ${pills.join('')}
         </button>`);
-      celula.addEventListener('click', () => abrirDia(c.data));
+      celula.addEventListener('click', () => {
+        if (!modoSelecao) return abrirDia(c.data);
+        if (selecao.has(c.data)) selecao.delete(c.data);
+        else selecao.add(c.data);
+        desenhar();
+        atualizarBarra();
+      });
       grade.appendChild(celula);
     });
   }
@@ -232,6 +244,135 @@ export async function telaCalendario(main) {
       recarregar();
     } catch (err) { mostrarErro(err); }
   }
+
+  function atualizarBarra() {
+    const barra = document.getElementById('cal-barra');
+    const n = selecao.size;
+    barra.hidden = !(modoSelecao || n);
+    barra.innerHTML = `
+      <div>
+        <strong>${n} dia(s) selecionado(s)</strong>
+        <span class="small">${modoSelecao ? ' · clique nos dias para marcar ou desmarcar. A seleção continua ao trocar de mês.' : ''}</span>
+      </div>
+      <div class="acoes">
+        <button class="btn pequeno" data-sel="periodo" type="button">Selecionar período</button>
+        <button class="btn pequeno" data-sel="mes" type="button">Selecionar mês inteiro</button>
+        <button class="btn pequeno primary" data-sel="aplicar" type="button" ${n ? '' : 'disabled'}>Aplicar evento</button>
+        <button class="btn pequeno perigo" data-sel="remover" type="button" ${n ? '' : 'disabled'}>Remover eventos manuais</button>
+        <button class="btn pequeno" data-sel="limpar" type="button" ${n ? '' : 'disabled'}>Limpar</button>
+      </div>`;
+  }
+
+  function intervaloDias(de, ate) {
+    const out = [];
+    const fim = new Date(ate + 'T00:00:00Z');
+    for (let d = new Date(de + 'T00:00:00Z'); d <= fim; d.setUTCDate(d.getUTCDate() + 1)) {
+      out.push(d.toISOString().slice(0, 10));
+    }
+    return out;
+  }
+
+  function abrirSelecaoPeriodo() {
+    const ultimo = diasDoMes(estado.ano, estado.mes).at(-1);
+    const f = formulario([
+      { k: 'de', label: 'Data inicial', type: 'date', req: true },
+      { k: 'ate', label: 'Data final', type: 'date', req: true },
+      { k: 'uteis', label: 'Somente dias úteis (segunda a sexta)', type: 'bool', largo: true }
+    ], { de: `${estado.ano}-${String(estado.mes).padStart(2, '0')}-01`, ate: ultimo, uteis: true });
+    const aviso = el('<p class="small muted" style="margin-bottom:14px">Os dias do período são somados à seleção atual. Use para marcar, por exemplo, o início e o fim do ano letivo.</p>');
+    const conteudo = document.createElement('div');
+    conteudo.append(aviso, f.el);
+    abrirModal({
+      titulo: 'Selecionar período',
+      conteudo,
+      submitLabel: 'Adicionar à seleção',
+      onSubmit: async (fechar) => {
+        const v = f.ler();
+        if (!v.de || !v.ate) throw new Error('Informe as duas datas.');
+        if (v.de > v.ate) throw new Error('A data inicial é posterior à final.');
+        let dias = intervaloDias(v.de, v.ate);
+        if (v.uteis) dias = dias.filter(ehDiaUtil);
+        dias.forEach((d) => selecao.add(d));
+        fechar();
+        toast(`${dias.length} dia(s) adicionados à seleção.`, 'ok');
+        desenhar();
+        atualizarBarra();
+      }
+    });
+  }
+
+  function abrirAplicarLote() {
+    const dias = [...selecao].sort();
+    const conteudo = document.createElement('div');
+    conteudo.innerHTML = `<div class="aviso" style="margin-bottom:14px"><strong>${dias.length} dia(s)</strong>, de ${fmtData(dias[0])} a ${fmtData(dias.at(-1))}. Será criado um evento em cada dia.</div>`;
+    const f = formulario([
+      { k: 'nome', label: 'Nome do evento', type: 'text', req: true, largo: true, placeholder: 'Ex.: Recesso escolar, Início do ano letivo' },
+      { k: 'tipo', label: 'Tipo', type: 'select', req: true, opcoes: Object.entries(TIPOS_EVENTO), vazio: null },
+      { k: 'dia_letivo', label: 'Tem aula nestes dias (gera planejamento diário)', type: 'bool' },
+      { k: 'todos_colegios', label: 'Vale para todos os colégios', type: 'bool' },
+      { k: 'colegios', label: 'Colégios em que vale (se não for todos)', type: 'checks', largo: true, opcoes: dados.colegios.map((x) => [x.id, x.nome]) }
+    ], { tipo: 'recesso', todos_colegios: true, colegios: [] });
+    conteudo.appendChild(f.el);
+    abrirModal({
+      titulo: 'Aplicar evento aos dias selecionados',
+      conteudo,
+      submitLabel: `Aplicar a ${dias.length} dia(s)`,
+      onSubmit: async (fechar) => {
+        const v = f.ler();
+        if (!v.nome) throw new Error('Informe o nome do evento.');
+        if (!v.todos_colegios && !v.colegios.length) throw new Error('Escolha pelo menos um colégio ou marque "vale para todos".');
+        const criados = await inserirVarios('calendario_eventos', dias.map((d) => ({
+          data: d,
+          nome: v.nome,
+          tipo: v.tipo,
+          dia_letivo: v.dia_letivo,
+          todos_colegios: v.todos_colegios,
+          origem: 'manual'
+        })));
+        if (!v.todos_colegios) {
+          const vinculos = criados.flatMap((e) => v.colegios.map((colegio_id) => ({ evento_id: e.id, colegio_id })));
+          const { error } = await supabase.from('evento_colegios').insert(vinculos);
+          if (error) throw error;
+        }
+        selecao.clear();
+        modoSelecao = false;
+        fechar();
+        toast(`Evento aplicado em ${dias.length} dia(s).`, 'ok');
+        recarregar();
+      }
+    });
+  }
+
+  async function removerLoteManuais() {
+    const dias = [...selecao];
+    if (!window.confirm(`Remover os eventos cadastrados manualmente em ${dias.length} dia(s)? Feriados importados não são removidos.`)) return;
+    try {
+      const { error } = await supabase.from('calendario_eventos').delete().in('data', dias).eq('origem', 'manual');
+      if (error) throw error;
+      selecao.clear();
+      toast('Eventos removidos.', 'ok');
+      recarregar();
+    } catch (err) { mostrarErro(err); }
+  }
+
+  main.querySelector('#cal-modo').onclick = () => {
+    modoSelecao = !modoSelecao;
+    main.querySelector('#cal-modo').textContent = modoSelecao ? 'Sair do modo seleção' : 'Selecionar dias';
+    main.querySelector('#cal-modo').classList.toggle('primary', modoSelecao);
+    desenhar();
+    atualizarBarra();
+  };
+
+  document.getElementById('cal-barra').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-sel]');
+    if (!b) return;
+    const acao = b.dataset.sel;
+    if (acao === 'periodo') abrirSelecaoPeriodo();
+    if (acao === 'mes') { diasDoMes(estado.ano, estado.mes).forEach((d) => selecao.add(d)); desenhar(); atualizarBarra(); }
+    if (acao === 'aplicar') abrirAplicarLote();
+    if (acao === 'remover') removerLoteManuais();
+    if (acao === 'limpar') { selecao.clear(); desenhar(); atualizarBarra(); }
+  });
 
   main.querySelector('#cal-ant').onclick = () => { estado.mes--; if (estado.mes < 1) { estado.mes = 12; estado.ano--; } recarregar(); };
   main.querySelector('#cal-prox').onclick = () => { estado.mes++; if (estado.mes > 12) { estado.mes = 1; estado.ano++; } recarregar(); };
