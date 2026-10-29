@@ -74,6 +74,33 @@ export function aulasPorDia(letivosDoAno, aulasSemana) {
   return resultado;
 }
 
+// Categoria do dia para contagens e gráficos. Cada dia conta em uma categoria só.
+// Fim de semana fica sem categoria (retorna null).
+export function categoriaDia(classe) {
+  if (!classe.util) return null;
+  const tipos = classe.eventos.map((e) => e.tipo);
+  if (tipos.some((t) => t.startsWith('feriado'))) return 'feriado';
+  if (tipos.includes('recesso') || tipos.includes('ponto_facultativo')) return 'nao_letivo';
+  if (tipos.includes('acao_pedagogica')) return 'pedagogica';
+  if (tipos.includes('evento_colegio')) return 'evento';
+  return classe.letivo ? 'letivo' : 'nao_letivo';
+}
+
+// Emenda: dia útil, sem feriado, em que o dia útil anterior ou o seguinte é feriado.
+// Fins de semana são ignorados (ex.: feriado na segunda faz da sexta anterior uma emenda).
+export function emendasDoAno(ano, eventos, colegioId) {
+  const uteis = diasDoAno(ano).filter(ehDiaUtil);
+  const feriados = new Set(uteis.filter((d) => classificarDia(d, eventos, colegioId).eventos.some((e) => e.tipo.startsWith('feriado'))));
+  const emendas = new Set();
+  uteis.forEach((d, i) => {
+    if (feriados.has(d)) return;
+    const anterior = uteis[i - 1];
+    const seguinte = uteis[i + 1];
+    if ((anterior && feriados.has(anterior)) || (seguinte && feriados.has(seguinte))) emendas.add(d);
+  });
+  return { feriados, emendas };
+}
+
 export function contarLetivos(letivos) {
   const porMes = {};
   for (const d of letivos) {

@@ -159,6 +159,10 @@ dialog.grande { width: min(1000px, calc(100vw - 32px)); }
 .separador { height: 1px; background: var(--borda); margin: 18px 0; }
 
 /* ---------- Calendário ---------- */
+.cal-nav { display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.cal-nav .mes-titulo { font-size: 20px; font-weight: 800; color: var(--marinho); min-width: 260px; text-align: center; text-transform: capitalize; }
+.cal-topo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.kpi.laranja::before { background: var(--laranja); }
 .cal-controles { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cal-controles .mes-titulo { font-size: 20px; font-weight: 800; color: var(--marinho); min-width: 220px; text-align: center; text-transform: capitalize; }
 .cal-grade { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }

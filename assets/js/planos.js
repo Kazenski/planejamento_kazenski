@@ -1,4 +1,4 @@
-import { supabase } from './supabase.js';
+﻿import { supabase } from './supabase.js';
 import { listar, inserir, atualizar, excluir, getConfig } from './db.js';
 import { esc, el, abrirModal, fecharModal, formulario, toast, mostrarErro, carregando, tagStatus, lista } from './ui.js';
 import { MESES, MESES_PLANEJAMENTO, SERIES, DIAS_LETIVOS_PADRAO, STATUS_PLANO, DIAS_SEMANA } from './config.js';
@@ -206,7 +206,7 @@ async function abrirNovoAnual(planos) {
 
   const f = formulario([
     { k: 'turma_id', label: 'Turma', type: 'select', req: true, largo: true, opcoes: turmas.map((t) => [t.id, `${t.colegios?.nome} · ${t.nome} (${t.ano})`]), vazio: 'Escolha a turma' },
-    { k: 'disciplina_id', label: 'Disciplina', type: 'select', req: true, largo: true, opcoes: disciplinas.map((d) => [d.id, d.nome]), vazio: 'Escolha a disciplina', ajuda: 'Só aparecem disciplinas vinculadas à turma em "Aulas por disciplina".' },
+    { k: 'disciplina_id', label: 'Disciplina', type: 'select', req: true, largo: true, opcoes: disciplinas.map((d) => [d.id, `${d.nome} (${d.ano})`]), vazio: 'Escolha a disciplina', ajuda: 'Só aparecem disciplinas vinculadas à turma em "Aulas por disciplina".' },
     { k: 'origem_id', label: 'Partir de', type: 'select', largo: true, opcoes: planos.map((p) => [p.id, rotuloAnual(p)]), vazio: 'Do zero (sem plano anterior)', ajuda: 'Copia a lista de conteúdos do plano escolhido. Você marca o que mudou.' }
   ], {});
 

@@ -86,7 +86,10 @@ export async function telaMateriais(main) {
       </div>
     </div>
 
-    ${status.ok ? '' : `<div class="aviso azul" style="margin-bottom:16px">${esc(avisoConexao[status.motivo] || avisoConexao.sem_token)}</div>`}
+    ${status.ok ? '' : `<div class="aviso azul" style="margin-bottom:16px">
+      ${esc(avisoConexao[status.motivo] || avisoConexao.sem_token)}
+      ${status.escopos ? `<br><span class="small">Permissões que o Google devolveu para este login: <strong>${esc(status.escopos.filter(Boolean).map((e) => e.replace('https://www.googleapis.com/auth/', '').replace('https://www.googleapis.com/', '')).join(', ') || 'nenhuma')}</strong>. Para conferir no Google: myaccount.google.com/permissions</span>` : ''}
+    </div>`}
 
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr));margin-bottom:20px">
       ${blocoPasta('materiais', 'Pasta de materiais-base', 'Livros, currículos e documentos de referência.', pastaMat)}

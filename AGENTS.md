@@ -172,6 +172,13 @@ Gráficos esperados, com dados do próprio banco:
 - Projeto `kazenski` em modo **Em produção**, por decisão do Edu. O login usa só escopos básicos (sem aviso e sem expiração). O Drive usa `drive.readonly` com autorização separada. Ao conectar o Drive, o Google mostra aviso de app não verificado e limita a 100 usuários. Ao publicar, verificar outros clientes do projeto que pedem escopos sensíveis.
 - Trimestres (premissa, confirmar com o Edu): 1º fev–abr, 2º mai–ago, 3º set–dez. Está em `assets/js/planos.js` (constante `TRIMESTRES`).
 
+**Versão 0.2 (calendário, painel e anos):**
+- Migração `0002_eventos_catalogo_e_anos.sql` aplicada: catálogo `eventos_catalogo` (lançamentos escolhem dele), coluna `ano` em `colegios` e `disciplinas`, e `calendario_eventos.catalogo_id`.
+- Calendário: seletor de colégio no cabeçalho; navegação de mês e ano centralizada; contadores de feriados nacionais, feriados + emendas, atividades pedagógicas e eventos curriculares extras; lançamentos do mês visíveis; gestão do catálogo abaixo do calendário; seleção múltipla de dias.
+- Definições usadas nos contadores (premissas, confirmar com o Edu): **emenda** = dia útil sem feriado cujo dia útil anterior ou seguinte é feriado (fins de semana são ignorados). **Atividade pedagógica** = tipo `acao_pedagogica`. **Evento curricular extra** = tipo `evento_colegio`.
+- Painel: barras empilhadas por categoria de dia (letivo, feriado, recesso/ponto, atividade pedagógica, evento extra) e tabela de aulas por disciplina no ano (respeita o calendário de cada colégio).
+- Materiais: o indicador de conexão do Drive agora confere a permissão no Google (`tokeninfo`), e a tela mostra as permissões recebidas.
+
 **Acesso de teste (TEMPORÁRIO):**
 - Formulário de e-mail e senha na tela de login (bloco `<details id="acesso-teste">` em `index.html`, funções `entrarComSenha` em `auth.js` e listener em `app.js`). Marcado com comentários "TEMPORÁRIO".
 - Usuário de teste: `teste@planejamento-kazenski.com` (criado no Supabase Auth, e-mail confirmado).

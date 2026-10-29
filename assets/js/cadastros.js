@@ -1,4 +1,4 @@
-import { listar, inserir, atualizar, excluir } from './db.js';
+﻿import { listar, inserir, inserirVarios, atualizar, excluir } from './db.js';
 import { esc, abrirModal, formulario, mostrarErro, toast, carregando, lista } from './ui.js';
 import { SERIES } from './config.js';
 
@@ -12,7 +12,9 @@ const CADASTROS = {
     descricao: 'Direção, coordenação, supervisão e e-mails usados nos envios de planejamento.',
     tabela: 'colegios',
     ordem: 'nome',
-    listar: () => listar('colegios', { ordem: 'nome' }),
+    filtroAno: true,
+    copiar: true,
+    listar: (ano) => listar('colegios', { ordem: 'nome', ajuste: (q) => (ano ? q.eq('ano', ano) : q) }),
     colunas: [
       { label: 'Colégio', valor: (i) => `<strong>${esc(i.nome)}</strong>` },
       { label: 'Direção', valor: (i) => esc(i.direcao || '—') },
@@ -28,6 +30,7 @@ const CADASTROS = {
       { k: 'supervisao', label: 'Supervisão', type: 'text' },
       { k: 'emails_copia', label: 'E-mails em cópia', type: 'lista', ajuda: 'Um por linha ou separados por vírgula.' },
       { k: 'emails_material', label: 'E-mails para envio de material pedagógico', type: 'lista', ajuda: 'Um por linha ou separados por vírgula.' },
+      { k: 'ano', label: 'Ano letivo', type: 'number', req: true, min: 2000, max: 2100, step: 1 },
       { k: 'ativo', label: 'Colégio ativo', type: 'bool' }
     ]
   },
@@ -38,13 +41,16 @@ const CADASTROS = {
     descricao: 'Componentes curriculares do técnico em TI. Depois vincule às turmas com a quantidade de aulas por semana.',
     tabela: 'disciplinas',
     ordem: 'nome',
-    listar: () => listar('disciplinas', { ordem: 'nome' }),
+    filtroAno: true,
+    copiar: true,
+    listar: (ano) => listar('disciplinas', { ordem: 'nome', ajuste: (q) => (ano ? q.eq('ano', ano) : q) }),
     colunas: [
       { label: 'Disciplina', valor: (i) => `<strong>${esc(i.nome)}</strong>` },
       { label: 'Situação', valor: (i) => (i.ativo ? '<span class="tag verde">Ativa</span>' : '<span class="tag">Inativa</span>') }
     ],
     campos: async () => [
       { k: 'nome', label: 'Nome da disciplina', type: 'text', req: true, largo: true },
+      { k: 'ano', label: 'Ano letivo', type: 'number', req: true, min: 2000, max: 2100, step: 1 },
       { k: 'ativo', label: 'Disciplina ativa', type: 'bool' }
     ]
   },
@@ -72,7 +78,7 @@ const CADASTROS = {
     campos: async () => {
       const colegios = await listar('colegios', { ordem: 'nome' });
       return [
-        { k: 'colegio_id', label: 'Colégio', type: 'select', req: true, opcoes: colegios.map((c) => [c.id, c.nome]), vazio: 'Escolha o colégio' },
+        { k: 'colegio_id', label: 'Colégio', type: 'select', req: true, opcoes: colegios.map((c) => [c.id, `${c.nome} (${c.ano})`]), vazio: 'Escolha o colégio' },
         { k: 'nome', label: 'Nome da turma', type: 'text', req: true, placeholder: 'Ex.: 1º A' },
         { k: 'ano', label: 'Ano letivo', type: 'number', req: true, min: 2000, max: 2100, step: 1 },
         { k: 'serie', label: 'Série', type: 'select', req: true, opcoes: Object.entries(SERIES).map(([v, r]) => [v, r]) },
@@ -106,7 +112,7 @@ const CADASTROS = {
       const disciplinas = await listar('disciplinas', { ordem: 'nome' });
       return [
         { k: 'turma_id', label: 'Turma', type: 'select', req: true, opcoes: turmas.map((t) => [t.id, `${t.colegios?.nome || ''} · ${t.nome} (${t.ano})`]), vazio: 'Escolha a turma' },
-        { k: 'disciplina_id', label: 'Disciplina', type: 'select', req: true, opcoes: disciplinas.map((d) => [d.id, d.nome]), vazio: 'Escolha a disciplina' },
+        { k: 'disciplina_id', label: 'Disciplina', type: 'select', req: true, opcoes: disciplinas.map((d) => [d.id, `${d.nome} (${d.ano})`]), vazio: 'Escolha a disciplina' },
         { k: 'aulas_semana', label: 'Aulas por semana', type: 'number', req: true, min: 1, max: 12, step: 1, ajuda: 'Exemplo: 2 aulas de 50 minutos por semana.' }
       ];
     }
@@ -133,6 +139,7 @@ export async function telaCadastro(main, chave) {
               <option value="">Todos</option>
             </select>
           </label>` : ''}
+        ${cfg.copiar ? '<button class="btn" id="btn-copiar" type="button">Copiar do ano anterior</button>' : ''}
         <button class="btn primary" id="btn-novo" type="button">+ Novo ${esc(cfg.singular)}</button>
       </div>
     </div>
@@ -194,6 +201,34 @@ export async function telaCadastro(main, chave) {
   }
 
   main.querySelector('#btn-novo').addEventListener('click', () => abrirForm(null).catch(mostrarErro));
+
+  // Copia para o ano escolhido os cadastros do ano anterior que ainda não existem nele.
+  async function copiarAnoAnterior() {
+    try {
+      if (!ctx.ano) return toast('Escolha um ano específico no filtro para copiar.', 'erro');
+      const origem = await listar(cfg.tabela, { ordem: 'nome', ajuste: (q) => q.eq('ano', ctx.ano - 1) });
+      if (!origem.length) return toast(`Não há cadastros em ${ctx.ano - 1} para copiar.`, 'erro');
+      const atuais = await listar(cfg.tabela, { ordem: null, ajuste: (q) => q.eq('ano', ctx.ano) });
+      const nomes = new Set(atuais.map((x) => x.nome.toLowerCase()));
+      const novos = origem
+        .filter((x) => !nomes.has(x.nome.toLowerCase()))
+        .map((x) => ({
+          nome: x.nome,
+          ativo: x.ativo,
+          ano: ctx.ano,
+          ...(chave === 'colegios' ? {
+            direcao: x.direcao, coordenacao: x.coordenacao, supervisao: x.supervisao,
+            emails_copia: x.emails_copia, emails_material: x.emails_material
+          } : {})
+        }));
+      if (!novos.length) return toast(`Tudo de ${ctx.ano - 1} já existe em ${ctx.ano}.`, 'ok');
+      if (!window.confirm(`Copiar ${novos.length} cadastro(s) de ${ctx.ano - 1} para ${ctx.ano}? Os nomes que já existem não são duplicados.`)) return;
+      await inserirVarios(cfg.tabela, novos);
+      toast(`${novos.length} cadastro(s) copiado(s) para ${ctx.ano}.`, 'ok');
+      carregarLista();
+    } catch (err) { mostrarErro(err); }
+  }
+  main.querySelector('#btn-copiar')?.addEventListener('click', copiarAnoAnterior);
   main.querySelector('#filtro-ano')?.addEventListener('change', (e) => {
     ctx.ano = e.target.value ? Number(e.target.value) : null;
     carregarLista();
