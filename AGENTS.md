@@ -159,11 +159,25 @@ Gráficos esperados, com dados do próprio banco:
 - Competências mais trabalhadas, por eixo.
 - Conteúdos reaproveitados entre anos (quantos mantidos, novos e removidos).
 
-## 11. Pendências
+## 11. Estado atual (v0.1)
 
-1. Edu enviar os modelos de planejamento para a pasta do Drive (ou anexos) e confirmar os links das pastas.
-2. Criar o projeto no Google Cloud e configurar o login (seção 7).
-3. Criar a chave do Gemini (ou escolher outro modelo) e informar para configurar como segredo do Supabase.
-4. Confirmar o documento "habilidades e competências digitais de SC" (provavelmente o Currículo de Educação Digital, já em `anexos/`).
-5. Aplicar o esquema (seção 6) e a Edge Function de IA, depois da validação deste arquivo.
-6. Criar o repositório `Kazenski/planejamento_kazenski` (privado) e publicar a estrutura inicial.
+**Feito:**
+- Repositório privado `Kazenski/planejamento_kazenski`. Site publicado em `https://kazenski.github.io/planejamento_kazenski/` (GitHub Pages, branch `main`, raiz).
+- Esquema aplicado no Supabase (14 tabelas, RLS ativo, uma política por usuário, `anon` sem acesso). Arquivo: `supabase/migrations/0001_esquema_inicial.sql`.
+- Google Cloud: cliente OAuth "Supabase - Planejamento Kazenski" no projeto `kazenski`. Login configurado no Supabase (provedor Google ativo, Site URL e Redirect URLs corretos).
+- Edge Function `gerar-planejamento` publicada, com verificação de login (JWT). Falta o segredo `GEMINI_API_KEY`.
+- Telas: login, painel (gráficos), calendário (feriados BrasilAPI, eventos com seleção de colégios, modal por dia), colégios, disciplinas, turmas, aulas por disciplina, planos (anual, mensal, diário), materiais (Drive), configurações (meta de dias letivos).
+
+**Decisões de publicação:**
+- Projeto `kazenski` em modo **Em produção**, por decisão do Edu. O login usa só escopos básicos (sem aviso e sem expiração). O Drive usa `drive.readonly` com autorização separada. Ao conectar o Drive, o Google mostra aviso de app não verificado e limita a 100 usuários. Ao publicar, verificar outros clientes do projeto que pedem escopos sensíveis.
+- Trimestres (premissa, confirmar com o Edu): 1º fev–abr, 2º mai–ago, 3º set–dez. Está em `assets/js/planos.js` (constante `TRIMESTRES`).
+
+**Pendências:**
+1. Edu criar a chave do Gemini (Google AI Studio) e configurar: `supabase secrets set GEMINI_API_KEY=...`. Confirmar o nome do modelo (`GEMINI_MODEL`, padrão `gemini-2.5-flash`).
+2. Testar o login ponta a ponta no site publicado (o teste automático não passa pelo login Google).
+3. Edu enviar os links das pastas do Drive (materiais e modelos), colar em Materiais e listar.
+4. Indexação do conteúdo dos materiais para a IA. Hoje a função usa só nomes dos arquivos e o catálogo de habilidades. Próxima etapa: extrair texto, quebrar em trechos e gerar embeddings no pgvector.
+5. Popular a tabela `habilidades` com os códigos dos anexos (EF, EM13CO01 a EM13CO26 e BNCC Computação). Hoje a tabela está vazia, então os vínculos de habilidades não são gravados.
+6. Revisar o texto gerado pela IA na primeira geração (formato, profundidade e vínculo com o documento do colégio).
+7. Versionar mensal: hoje cada mês tem um único registro (regerar sobrescreve). Ver se precisa de histórico.
+8. Ao aplicar a proposta do mensal no anual, a nova versão herda o plano antigo até ser gerada de novo. Confirmar se o Edu prefere limpar o plano nesse caso.

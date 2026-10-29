@@ -4,7 +4,9 @@ Site pessoal para criar, guardar e reutilizar planejamentos técnicos de aula (e
 
 Cada planejamento é salvo por ano, colégio, turma e disciplina. Ao virar o ano, o professor copia o planejamento anterior e ajusta apenas o que mudou.
 
-> Status: **em planejamento**. As regras estão em [`docs/regras-de-negocio.md`](docs/regras-de-negocio.md). A memória de contexto para a IA está em [`AGENTS.md`](AGENTS.md).
+> Status: **primeira versão funcional**. Login, cadastros, calendário, planos e painel estão construídos. A geração com IA depende da chave do Gemini (ver Configuração). Regras em [`docs/regras-de-negocio.md`](docs/regras-de-negocio.md). Memória do projeto em [`AGENTS.md`](AGENTS.md).
+
+Site publicado em: https://kazenski.github.io/planejamento_kazenski/
 
 ## Funcionalidades previstas
 
@@ -33,14 +35,23 @@ Referência de estrutura: [painel_agilista_2026](https://github.com/Kazenski/pai
 ## Estrutura do repositório
 
 ```
-index.html                       página principal
+index.html                       página principal (login, menu, modal)
 assets/css/style.css             visual (cores do agile_Kazenski)
-assets/js/config.js              URL e chave publicável do Supabase
-assets/js/auth.js                login com Google
-assets/js/store.js               leitura e gravação no Supabase
-assets/js/app.js                 telas, formulários, gráficos
+assets/js/config.js              constantes (Supabase público, meses, tipos de evento)
+assets/js/supabase.js            cliente do Supabase
+assets/js/auth.js                login Google e conexão com o Drive
+assets/js/db.js                  leitura e gravação no banco
+assets/js/ui.js                  modal, formulários e mensagens
+assets/js/regras.js              regras de dia letivo e distribuição de aulas (sem acesso ao banco)
+assets/js/cadastros.js           colégios, disciplinas, turmas e aulas por disciplina
+assets/js/calendario.js          calendário letivo, feriados e eventos
+assets/js/planos.js              planos anual, mensal e diário
+assets/js/materiais.js           pastas do Drive e arquivos registrados
+assets/js/painel.js              gráficos e indicadores
+assets/js/configuracoes.js       meta de dias letivos e regras gerais
+assets/js/app.js                 login, rotas e menu
 supabase/migrations/             esquema do banco (SQL)
-supabase/functions/              Edge Functions (IA, Drive, feriados)
+supabase/functions/              Edge Function de IA (gerar-planejamento)
 docs/                            regras de negócio e documentação
 AGENTS.md                        memória do projeto para a IA
 ```
@@ -66,12 +77,11 @@ Acesse `http://localhost:8000`. Abrir o `index.html` com duplo clique não funci
    ```bash
    supabase secrets set GEMINI_API_KEY=...
    ```
-5. **Deploy das Edge Functions:**
+5. **Deploy da Edge Function de IA:**
    ```bash
-   supabase functions deploy gerar-planejamento
-   supabase functions deploy importar-drive
-   supabase functions deploy feriados
+   supabase functions deploy gerar-planejamento --project-ref sqqtcshgfriwinpvvszp
    ```
+   A função valida o login do usuário antes de gerar qualquer conteúdo.
 
 ## Deploy (GitHub Pages)
 
