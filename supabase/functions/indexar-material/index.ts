@@ -28,7 +28,9 @@ function chaveGemini(): string {
 }
 
 function dividir(texto: string): string[] {
-  const t = texto.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  // Caracteres de controle (ex.: \u0000 de PDFs mal formados) não são aceitos pelo Postgres.
+  const limpo = texto.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '');
+  const t = limpo.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
   const out: string[] = [];
   let i = 0;
   while (i < t.length) {
