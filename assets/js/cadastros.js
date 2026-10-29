@@ -84,6 +84,7 @@ const CADASTROS = {
         { k: 'serie', label: 'Série', type: 'select', req: true, opcoes: Object.entries(SERIES).map(([v, r]) => [v, r]) },
         { k: 'curso', label: 'Curso', type: 'text', req: true },
         { k: 'qtd_alunos', label: 'Quantidade de alunos', type: 'number', min: 0, step: 1 },
+        { k: 'observacoes', label: 'Particularidades da turma', type: 'textarea', largo: true, placeholder: 'Ex.: turma com muitos alunos de primeiro ano, laboratório com 20 máquinas, aluno com acompanhamento especial' },
         { k: 'ativo', label: 'Turma ativa', type: 'bool' }
       ];
     }

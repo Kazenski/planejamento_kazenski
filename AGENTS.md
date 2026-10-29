@@ -186,6 +186,16 @@ Gráficos esperados, com dados do próprio banco:
 - Os cinco arquivos de `anexos/` (dois modelos `.docx` e três PDFs de referência) foram enviados por script com a chave de serviço, no caminho do usuário Edu.
 - Próximo passo para os livros: extrair texto, dividir em trechos e indexar (pgvector). O Edu vai acrescentar PDFs de conteúdo em `anexos/`.
 
+**Versão 0.4 (multiusuário, indexação e contexto por turma):**
+- Isolamento por usuário verificado: a conta de teste não vê fontes, colégios nem arquivos do Edu (Tabelas, Storage e RPC `buscar_trechos`).
+- Acesso: login Google aberto, sem lista de e-mails. Gestão de acessos fica como opção futura, se houver outros professores.
+- Habilidades: catálogo por professor (cada um cadastra o seu).
+- Turmas: campo `observacoes` (migração 0005) com as particularidades da turma. Os prompts usam curso, série e particularidades (anual, mensal e diário). O prompt base não tem mais curso fixo.
+- Migração 0004: pgvector, `material_trechos` (embedding 768, normalizado) e `buscar_trechos`. Migrações 0004 e 0005 aplicadas.
+- Edge Functions publicadas: `indexar-material` (extrai PDF com unpdf, trechos de 1400 caracteres com sobreposição de 200, embeddings `gemini-embedding-001`, processa 40 páginas por chamada e gera classificação automática) e `gerar-planejamento` (com `fonte_ids` e `observacoes`: busca só nos materiais escolhidos).
+- **Ainda não testados:** indexação e geração com materiais. Dependem do segredo `GEMINI_API_KEY`.
+- **Ainda não feito na tela:** seletor de materiais na geração, campos de classificação (tipo, área geral, área específica, disciplinas) e botão de indexar em Materiais.
+
 **Acesso de teste (TEMPORÁRIO):**
 - Formulário de e-mail e senha na tela de login (bloco `<details id="acesso-teste">` em `index.html`, funções `entrarComSenha` em `auth.js` e listener em `app.js`). Marcado com comentários "TEMPORÁRIO".
 - Usuário de teste: `teste@planejamento-kazenski.com` (criado no Supabase Auth, e-mail confirmado).

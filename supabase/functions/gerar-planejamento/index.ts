@@ -11,6 +11,52 @@ const CORS = {
 
 const MODELO = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash';
 
+// Embedding de uma consulta (RETRIEVAL_QUERY), normalizado, para buscar nos trechos dos materiais.
+async function embedConsulta(texto: string): Promise<number[]> {
+  const chave = Deno.env.get('GEMINI_API_KEY');
+  if (!chave) throw new Error('A chave da IA não está configurada no Supabase (GEMINI_API_KEY).');
+  const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
+    body: JSON.stringify({
+      content: { parts: [{ text: texto.slice(0, 6000) }] },
+      taskType: 'RETRIEVAL_QUERY',
+      outputDimensionality: 768
+    })
+  });
+  if (!resp.ok) throw new Error(`O serviço de embeddings respondeu com erro ${resp.status}.`);
+  const dados = await resp.json();
+  const v: number[] = dados.embedding.values;
+  const n = Math.sqrt(v.reduce((s, x) => s + x * x, 0)) || 1;
+  return v.map((x) => x / n);
+}
+
+// Monta o bloco extra do prompt: observações do professor e trechos dos materiais escolhidos.
+// Sem materiais escolhidos, nada é lido nem consultado (sem custo extra).
+async function materiaisParaPrompt(db: any, corpo: any, consultaTexto: string): Promise<string> {
+  const fonteIds: string[] = Array.isArray(corpo.fonte_ids) ? corpo.fonte_ids : [];
+  const obs = String(corpo.observacoes || '').trim();
+  let txt = '';
+  if (obs) txt += `OBSERVAÇÕES DO PROFESSOR (considere ao planejar)\n${obs}\n\n`;
+  if (fonteIds.length && consultaTexto.trim()) {
+    const vetor = await embedConsulta(consultaTexto);
+    const { data: trechos, error } = await db.rpc('buscar_trechos', {
+      consulta: JSON.stringify(vetor),
+      fontes: fonteIds,
+      limite: 30
+    });
+    if (error) throw new Error(`Erro ao buscar nos materiais: ${error.message}`);
+    const { data: fontes } = await db.from('fontes_material').select('id, nome').in('id', fonteIds);
+    const nomes = new Map((fontes ?? []).map((f: any) => [f.id, f.nome]));
+    if (trechos?.length) {
+      txt += 'TRECHOS DOS MATERIAIS ESCOLHIDOS PELO PROFESSOR (use como referência e cite entre colchetes, ex.: [nome do material, p. X])\n';
+      txt += trechos.map((t: any) => `[${nomes.get(t.fonte_id) ?? 'material'}, p. ${t.pagina ?? '-'}] ${t.conteudo}`).join('\n---\n');
+      txt += '\n\n';
+    }
+  }
+  return txt;
+}
+
 function json(corpo: unknown, status = 200) {
   return new Response(JSON.stringify(corpo), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 }
@@ -37,9 +83,10 @@ async function gemini(prompt: string): Promise<any> {
 }
 
 const REGRAS_BASE = `
-Você é um especialista em planejamento de Educação Profissional Técnica de nível médio em Informática / TI, no estado de Santa Catarina (Brasil).
+Você é um especialista em planejamento de Educação Profissional Técnica de nível médio.
+Adapte o planejamento ao curso, à série e às particularidades da turma informados no contexto. Cada turma é única.
 Escreva sempre em português do Brasil, com linguagem objetiva e prática para o professor adaptar ao documento do colégio.
-Use como referências os currículos de Santa Catarina e a BNCC Computação. Só cite códigos de habilidade que estiverem na lista fornecida. Se nenhum código se aplicar, deixe a lista vazia. Não invente códigos.
+Use como referências os materiais escolhidos pelo professor e o catálogo de habilidades informado. Só cite códigos de habilidade que estiverem na lista fornecida. Se nenhum código se aplicar, deixe a lista vazia. Não invente códigos.
 Responda SOMENTE com JSON válido, no formato pedido.`;
 
 function listaHabilidades(habs: any[]) {
@@ -62,7 +109,7 @@ Deno.serve(async (req) => {
     const habilidades = (await db.from('habilidades').select('id, codigo, descricao')).data ?? [];
     const materiais = (await db.from('fontes_material').select('nome, categoria')).data ?? [];
 
-    if (corpo.tipo === 'anual') return json(await gerarAnual(db, user.id, corpo.plano_id, habilidades, materiais));
+    if (corpo.tipo === 'anual') return json(await gerarAnual(db, user.id, corpo.plano_id, habilidades, materiais, corpo));
     if (corpo.tipo === 'mensal') return json(await gerarMensal(db, user.id, corpo, habilidades, materiais));
     if (corpo.tipo === 'diario') return json(await gerarDiario(db, user.id, corpo, habilidades));
     return json({ erro: 'Tipo de planejamento inválido.' }, 400);
@@ -86,7 +133,7 @@ async function vincularHabilidades(db: any, userId: string, planoId: string, cod
 
 async function carregarAnual(db: any, planoId: string) {
   const { data, error } = await db.from('planos_anuais')
-    .select('*, turmas(nome, ano, serie, curso, qtd_alunos, colegios(nome)), disciplinas(nome)')
+    .select('*, turmas(nome, ano, serie, curso, qtd_alunos, observacoes, colegios(nome)), disciplinas(nome)')
     .eq('id', planoId).single();
   if (error || !data) throw new Error('Plano anual não encontrado.');
   const { data: vinc } = await db.from('turma_disciplinas').select('aulas_semana')
@@ -94,11 +141,12 @@ async function carregarAnual(db: any, planoId: string) {
   return { ...data, aulas_semana: vinc?.aulas_semana ?? null };
 }
 
-async function gerarAnual(db: any, userId: string, planoId: string, habilidades: any[], materiais: any[]) {
+async function gerarAnual(db: any, userId: string, planoId: string, habilidades: any[], materiais: any[], corpo: any) {
   const plano = await carregarAnual(db, planoId);
   const entrada = (plano.conteudo?.entrada?.conteudos || []).filter((c: any) => c.status !== 'removido');
   if (!entrada.length) throw new Error('Cadastre os conteúdos do ano antes de gerar.');
 
+  const extra = await materiaisParaPrompt(db, corpo, entrada.map((c: any) => `${c.titulo}${c.observacao ? ': ' + c.observacao : ''}`).join('\n'));
   const prompt = `${REGRAS_BASE}
 
 TAREFA: criar o PLANO ANUAL detalhado da disciplina, para um professor adaptar ao documento do colégio.
@@ -106,6 +154,7 @@ TAREFA: criar o PLANO ANUAL detalhado da disciplina, para um professor adaptar a
 CONTEXTO
 - Colégio: ${plano.turmas?.colegios?.nome}
 - Curso: ${plano.turmas?.curso} · Série: ${plano.turmas?.serie}º ano · Turma: ${plano.turmas?.nome} · Ano letivo: ${plano.ano}
+- Particularidades da turma: ${plano.turmas?.observacoes || 'nenhuma informada'}
 - Disciplina: ${plano.disciplinas?.nome}
 - Alunos: ${plano.turmas?.qtd_alunos ?? 'não informado'} (somente para cabeçalho)
 - Aulas por semana: ${plano.aulas_semana ?? 'não informado'}
@@ -115,7 +164,7 @@ CONTEXTO
 CONTEÚDOS DO ANO (use todos, na ordem e no trimestre indicados)
 ${entrada.map((c: any) => `- [${c.trimestre}º trimestre] ${c.titulo}${c.observacao ? ` (obs.: ${c.observacao})` : ''} (situação: ${c.status})`).join('\n')}
 
-CATÁLOGO DE HABILIDADES (código: descrição)
+${extra}CATÁLOGO DE HABILIDADES (código: descrição)
 ${listaHabilidades(habilidades)}
 
 FORMATO DO JSON:
@@ -183,9 +232,15 @@ async function gerarMensal(db: any, userId: string, corpo: any, habilidades: any
     if (!existe) propostaEntrada.push({ titulo: e, trimestre: TRIMESTRE_DO_MES(mes), status: 'novo', observacao: `Incluído para ${mes}/${anual.ano}` });
   }
 
+  const extra = await materiaisParaPrompt(db, corpo, [...trabalhar.map((c: any) => c.titulo), ...extras].join('\n'));
   const prompt = `${REGRAS_BASE}
 
 TAREFA: criar o PLANO MENSAL de ${mes}/${anual.ano}, como recorte do plano anual. Mantenha coerência com o anual e com o que o professor marcou.
+
+CONTEXTO
+- Curso: ${anual.turmas?.curso} · Série: ${anual.turmas?.serie}º ano · Turma: ${anual.turmas?.nome}
+- Particularidades da turma: ${anual.turmas?.observacoes || 'nenhuma informada'}
+- Disciplina: ${anual.disciplinas?.nome}
 
 PLANO ANUAL (fonte da verdade)
 ${JSON.stringify(planoAnual.trimestres || [])}
@@ -196,7 +251,7 @@ AJUSTES DO PROFESSOR PARA ESTE MÊS
 - Remover do ano: ${remover.map((c) => c.titulo).join('; ') || 'nenhum'}
 - Conteúdos a mais (não estão no anual): ${extras.join('; ') || 'nenhum'}
 
-CATÁLOGO DE HABILIDADES (código: descrição)
+${extra}CATÁLOGO DE HABILIDADES (código: descrição)
 ${listaHabilidades(habilidades)}
 
 FORMATO DO JSON:
@@ -245,26 +300,29 @@ function TRIMESTRE_DO_MES(mes: number) {
 
 async function gerarDiario(db: any, userId: string, corpo: any, habilidades: any[]) {
   const { data: mensal, error } = await db.from('planos_mensais')
-    .select('*, planos_anuais(id, ano, conteudo, turma_id, disciplina_id, turmas(nome, serie, curso, colegios(nome)), disciplinas(nome))')
+    .select('*, planos_anuais(id, ano, conteudo, turma_id, disciplina_id, turmas(nome, serie, curso, observacoes, colegios(nome)), disciplinas(nome))')
     .eq('id', corpo.plano_mensal_id).single();
   if (error || !mensal) throw new Error('Plano mensal não encontrado.');
   const dias: { data: string; aulas: number }[] = corpo.dias || [];
   if (!dias.length) throw new Error('Nenhum dia letivo informado.');
   const pa = mensal.planos_anuais;
 
+  const extra = await materiaisParaPrompt(db, corpo, (mensal.conteudo?.conteudos || []).map((c: any) => c.titulo).join('\n'));
   const prompt = `${REGRAS_BASE}
 
 TAREFA: criar o PLANO DIÁRIO de cada dia letivo abaixo. Cada dia traz o conteúdo da aula e a PRÁTICA DOCENTE: como o professor conduz a aula (organização, atividades, passos, recursos e forma de checar a aprendizagem).
 
 CONTEXTO
 - Colégio: ${pa.turmas?.colegios?.nome} · Turma: ${pa.turmas?.nome} · Disciplina: ${pa.disciplinas?.nome}
+- Curso: ${pa.turmas?.curso} · Série: ${pa.turmas?.serie}º ano
+- Particularidades da turma: ${pa.turmas?.observacoes || 'nenhuma informada'}
 - Plano mensal (resumo): ${mensal.conteudo?.resumo || ''}
 - Conteúdos do mês: ${JSON.stringify(mensal.conteudo?.conteudos || [])}
 
 DIAS LETIVOS (data e número de aulas)
 ${dias.map((d) => `- ${d.data}: ${d.aulas} aula(s)`).join('\n')}
 
-CATÁLOGO DE HABILIDADES (código: descrição)
+${extra}CATÁLOGO DE HABILIDADES (código: descrição)
 ${listaHabilidades(habilidades)}
 
 FORMATO DO JSON:
