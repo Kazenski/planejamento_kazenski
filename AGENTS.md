@@ -172,7 +172,14 @@ Gráficos esperados, com dados do próprio banco:
 - Projeto `kazenski` em modo **Em produção**, por decisão do Edu. O login usa só escopos básicos (sem aviso e sem expiração). O Drive usa `drive.readonly` com autorização separada. Ao conectar o Drive, o Google mostra aviso de app não verificado e limita a 100 usuários. Ao publicar, verificar outros clientes do projeto que pedem escopos sensíveis.
 - Trimestres (premissa, confirmar com o Edu): 1º fev–abr, 2º mai–ago, 3º set–dez. Está em `assets/js/planos.js` (constante `TRIMESTRES`).
 
+**Acesso de teste (TEMPORÁRIO):**
+- Formulário de e-mail e senha na tela de login (bloco `<details id="acesso-teste">` em `index.html`, funções `entrarComSenha` em `auth.js` e listener em `app.js`). Marcado com comentários "TEMPORÁRIO".
+- Usuário de teste: `teste@planejamento-kazenski.com` (criado no Supabase Auth, e-mail confirmado).
+- Para remover: apagar o bloco e os trechos marcados como TEMPORÁRIO; no Supabase, excluir o usuário de teste (Authentication > Users).
+- Não há senha no repositório.
+
 **Pendências:**
+0. Remover o acesso de teste (ver acima) antes do uso final.
 1. Edu criar a chave do Gemini (Google AI Studio) e configurar: `supabase secrets set GEMINI_API_KEY=...`. Confirmar o nome do modelo (`GEMINI_MODEL`, padrão `gemini-2.5-flash`).
 2. Testar o login ponta a ponta no site publicado (o teste automático não passa pelo login Google).
 3. Edu enviar os links das pastas do Drive (materiais e modelos), colar em Materiais e listar.

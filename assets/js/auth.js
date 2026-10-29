@@ -33,6 +33,11 @@ export function conectarDrive() {
   });
 }
 
+// TEMPORÁRIO: login de teste por e-mail e senha. Remover antes do uso final.
+export function entrarComSenha(email, senha) {
+  return supabase.auth.signInWithPassword({ email, password: senha });
+}
+
 export function sair() {
   return supabase.auth.signOut();
 }

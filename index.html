@@ -24,6 +24,15 @@
       </div>
       <p class="muted">Entre com sua conta Google para acessar seus planejamentos.</p>
       <button class="btn primary full" id="btn-entrar" type="button">Entrar com Google</button>
+      <!-- TEMPORÁRIO: acesso de teste por e-mail e senha. Remover antes do uso final. -->
+      <details id="acesso-teste" class="acesso-teste">
+        <summary>Acesso de teste (e-mail e senha)</summary>
+        <form id="form-senha" class="form-senha">
+          <label class="campo"><span>E-mail</span><input type="email" id="senha-email" autocomplete="username" required></label>
+          <label class="campo"><span>Senha</span><input type="password" id="senha-valor" autocomplete="current-password" required></label>
+          <button class="btn full" type="submit">Entrar com e-mail</button>
+        </form>
+      </details>
       <p id="login-erro" class="erro" hidden></p>
     </div>
   </section>

@@ -1,4 +1,4 @@
-import { getSessao, aoMudarSessao, entrarComGoogle, sair } from './auth.js';
+import { getSessao, aoMudarSessao, entrarComGoogle, entrarComSenha, sair } from './auth.js';
 import { mostrarErro, carregando } from './ui.js';
 import { telaPainel, sairDoPainel } from './painel.js';
 import { telaCalendario } from './calendario.js';
@@ -63,6 +63,16 @@ function mostrarApp(sessao) {
 
 document.getElementById('btn-entrar').addEventListener('click', () => {
   entrarComGoogle().catch((err) => mostrarLogin(err.message));
+});
+
+// TEMPORÁRIO: remover junto com o formulário de senha no index.html.
+document.getElementById('form-senha').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const { error } = await entrarComSenha(
+    document.getElementById('senha-email').value.trim(),
+    document.getElementById('senha-valor').value
+  );
+  if (error) mostrarLogin('E-mail ou senha incorretos.');
 });
 
 document.getElementById('btn-sair').addEventListener('click', async () => {
