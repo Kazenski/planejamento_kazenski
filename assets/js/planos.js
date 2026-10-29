@@ -3,6 +3,7 @@ import { listar, inserir, atualizar, excluir, getConfig } from './db.js';
 import { esc, el, abrirModal, fecharModal, formulario, toast, mostrarErro, carregando, tagStatus, lista } from './ui.js';
 import { MESES, MESES_PLANEJAMENTO, SERIES, DIAS_LETIVOS_PADRAO, STATUS_PLANO, DIAS_SEMANA } from './config.js';
 import { diasDoAno, diasLetivos, aulasPorDia, diaSemanaDe, diasDoMes } from './regras.js';
+import { seletorMateriais } from './materiais.js';
 
 // Premissa: 3 trimestres dentro do ano letivo (fev-dez). Ajustar aqui se o colégio mudar.
 const TRIMESTRES = { 1: [2, 3, 4], 2: [5, 6, 7, 8], 3: [9, 10, 11, 12] };
@@ -175,14 +176,28 @@ async function abaAnual(area) {
         toast('Plano anual excluído.', 'ok');
         abaAnual(area);
       }
-      if (b.dataset.ia) {
-        toast('Gerando o plano anual com IA. Isso pode levar alguns segundos...', '');
-        await invocarIA({ tipo: 'anual', plano_id: id });
-        toast('Plano anual gerado.', 'ok');
-        abaAnual(area);
-      }
+      if (b.dataset.ia) await abrirGerarAnual(plano, area);
     } catch (err) { mostrarErro(err); }
   };
+}
+
+// Antes de gerar, o professor escolhe os materiais que a IA pode consultar e escreve observações.
+async function abrirGerarAnual(plano, area) {
+  const seletor = await seletorMateriais({ disciplina: plano.disciplinas?.nome });
+  abrirModal({
+    titulo: `Gerar plano anual · ${plano.disciplinas?.nome}`,
+    conteudo: seletor.el,
+    grande: true,
+    submitLabel: 'Gerar com IA',
+    onSubmit: async (fechar) => {
+      const { fonte_ids, observacoes } = seletor.ler();
+      fechar();
+      toast('Gerando o plano anual com IA. Isso pode levar alguns segundos...', '');
+      await invocarIA({ tipo: 'anual', plano_id: plano.id, fonte_ids, observacoes });
+      toast('Plano anual gerado.', 'ok');
+      abaAnual(area);
+    }
+  });
 }
 
 function abrirVerAnual(plano) {
@@ -385,19 +400,24 @@ async function abaMensal(area) {
           <textarea id="m-extras" placeholder="Ex.: Introdução a APIs REST">${esc(extrasSalvos.join('\n'))}</textarea>
           <span class="ajuda">Conteúdos que não estão no plano anual. A IA inclui e propõe a inclusão no anual.</span>
         </label>
+        <div id="m-seletor"></div>
         <div class="acoes" style="margin-top:14px">
           <button class="btn primary" id="m-confirmar" type="button">Gerar plano de ${MESES[mes - 1]}</button>
         </div>
         ${existente?.conteudo?.conteudos ? `<div class="separador"></div><h3 style="margin-bottom:10px">Plano de ${MESES[mes - 1]}</h3>${renderMensal(existente.conteudo)}` : ''}
       </div>`;
 
+    const seletor = await seletorMateriais({ disciplina: anual.disciplinas?.nome });
+    resultado.querySelector('#m-seletor').replaceWith(seletor.el);
+
     resultado.querySelector('#m-confirmar').onclick = async () => {
       const acoes = {};
       resultado.querySelectorAll('tr[data-item]').forEach((tr) => { acoes[tr.dataset.item] = tr.querySelector('[data-acao]').value; });
       const extras = resultado.querySelector('#m-extras').value.split('\n').map((s) => s.trim()).filter(Boolean);
+      const { fonte_ids, observacoes } = seletor.ler();
       toast('Gerando o plano mensal com IA...', '');
       try {
-        const resp = await invocarIA({ tipo: 'mensal', plano_anual_id: anual.id, mes, ajustes: { itens: acoes, extras } });
+        const resp = await invocarIA({ tipo: 'mensal', plano_anual_id: anual.id, mes, ajustes: { itens: acoes, extras }, fonte_ids, observacoes });
         toast('Plano mensal gerado. Revise a proposta para o anual.', 'ok');
         mensais = await listar('planos_mensais', { select: '*', ordem: 'mes' });
         if (resp?.proposta_anual) mostrarProposta(anual, resp.proposta_anual, area);
@@ -495,7 +515,7 @@ async function abaDiario(area) {
 async function carregarDiario(area, mensal) {
   const alvo = area.querySelector('#d-conteudo');
   alvo.innerHTML = carregando('Calculando os dias letivos...');
-  const anual = await listar('planos_anuais', { select: 'id, ano, turma_id, disciplina_id, turmas(colegio_id)', ordem: null, ajuste: (q) => q.eq('id', mensal.plano_anual_id) });
+  const anual = await listar('planos_anuais', { select: 'id, ano, turma_id, disciplina_id, turmas(colegio_id), disciplinas(nome)', ordem: null, ajuste: (q) => q.eq('id', mensal.plano_anual_id) });
   const p = anual[0];
   const colegioId = p.turmas?.colegio_id;
 
@@ -530,6 +550,7 @@ async function carregarDiario(area, mensal) {
       <div class="card kpi azul"><div class="rotulo">Aulas no mês</div><div class="valor">${totalAulas}</div><div class="sub">${aulasSemana} aula(s) por semana</div></div>
       <div class="card kpi marinho"><div class="rotulo">Diários gerados</div><div class="valor">${diarios.length}</div><div class="sub">de ${doMes.length} dias</div></div>
     </div>
+    <div id="d-seletor"></div>
     <div class="acoes" style="justify-content:space-between;margin-bottom:12px">
       <p class="muted" style="margin:0">Feriados e eventos sem aula não entram. As aulas da semana são distribuídas pelos dias letivos.</p>
       <button class="btn primary" id="d-gerar" type="button">Gerar diários do mês</button>
@@ -549,14 +570,20 @@ async function carregarDiario(area, mensal) {
         }).join('')}
       </tbody></table></div>`;
 
+  const seletor = await seletorMateriais({ disciplina: p.disciplinas?.nome });
+  alvo.querySelector('#d-seletor').replaceWith(seletor.el);
+
   alvo.querySelector('#d-gerar').onclick = async () => {
     if (!doMes.length) return toast('Não há dias letivos neste mês.', 'erro');
     toast('Gerando os planos diários com IA...', '');
     try {
+      const { fonte_ids, observacoes } = seletor.ler();
       await invocarIA({
         tipo: 'diario',
         plano_mensal_id: mensal.id,
-        dias: doMes.map((d) => ({ data: d, aulas: aulasMapa.get(d) }))
+        dias: doMes.map((d) => ({ data: d, aulas: aulasMapa.get(d) })),
+        fonte_ids,
+        observacoes
       });
       toast('Planos diários gerados.', 'ok');
       carregarDiario(area, mensal);

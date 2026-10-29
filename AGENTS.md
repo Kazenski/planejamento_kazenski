@@ -193,8 +193,12 @@ Gráficos esperados, com dados do próprio banco:
 - Turmas: campo `observacoes` (migração 0005) com as particularidades da turma. Os prompts usam curso, série e particularidades (anual, mensal e diário). O prompt base não tem mais curso fixo.
 - Migração 0004: pgvector, `material_trechos` (embedding 768, normalizado) e `buscar_trechos`. Migrações 0004 e 0005 aplicadas.
 - Edge Functions publicadas: `indexar-material` (extrai PDF com unpdf, trechos de 1400 caracteres com sobreposição de 200, embeddings `gemini-embedding-001`, processa 40 páginas por chamada e gera classificação automática) e `gerar-planejamento` (com `fonte_ids` e `observacoes`: busca só nos materiais escolhidos).
-- **Ainda não testados:** indexação e geração com materiais. Dependem do segredo `GEMINI_API_KEY`.
-- **Ainda não feito na tela:** seletor de materiais na geração, campos de classificação (tipo, área geral, área específica, disciplinas) e botão de indexar em Materiais.
+- Segredo `GEMINI_API_KEY` configurado no Supabase (chave do projeto `kazenski`, com faturamento ativo).
+- **Testado de ponta a ponta com a conta de teste:** upload do Caderno 3 (344 páginas, 830 trechos), classificação automática, busca semântica (as páginas 337, 20 e 339 apareceram para "trilhas de aprofundamento") e geração de plano anual com os materiais e as observações da turma.
+- Indexação em blocos de 40 páginas: a versão anterior, que extraía o PDF inteiro a cada bloco, estourava memória (erro 546). Corrigido.
+- Tela de Materiais: classificação editável (tipo, área geral, área específica, disciplinas, resumo), aplicação da sugestão da IA, indexação automática no envio e botão de indexar.
+- Seletor "Base para a IA" na geração (anual, mensal e diário): só os materiais marcados são consultados, com observações para a IA. Materiais sugeridos aparecem marcados quando a disciplina coincide.
+- Dados de teste ficaram só na conta de teste (colégio "Colégio Teste", turma "1º A" e o material do Caderno 3).
 
 **Acesso de teste (TEMPORÁRIO):**
 - Formulário de e-mail e senha na tela de login (bloco `<details id="acesso-teste">` em `index.html`, funções `entrarComSenha` em `auth.js` e listener em `app.js`). Marcado com comentários "TEMPORÁRIO".

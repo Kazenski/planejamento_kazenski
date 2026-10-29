@@ -2,7 +2,7 @@
 // Processa em blocos de páginas (pagina_inicio), para caber no tempo da função. O site chama em sequência.
 // A chave GEMINI_API_KEY fica em segredo. As gravações usam o token do próprio usuário (RLS).
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { extractText, getDocumentProxy } from 'npm:unpdf@1';
+import { getDocumentProxy } from 'npm:unpdf@1';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -137,20 +137,25 @@ Deno.serve(async (req) => {
     if (erroDown || !arquivo) throw new Error('Não foi possível ler o arquivo no armazenamento.');
     const bytes = new Uint8Array(await arquivo.arrayBuffer());
 
-    let paginasTexto: string[];
+    let paginasTexto: string[] = [];
     let total: number;
+    const inicio = Math.max(1, Number(pagina_inicio));
+    let fim: number;
     if (ehPdf) {
       const pdf = await getDocumentProxy(bytes);
       total = pdf.numPages;
-      const { text } = await extractText(pdf, { mergePages: false });
-      paginasTexto = text as string[];
+      fim = Math.min(total, inicio + PAGINAS_POR_CHAMADA - 1);
+      // Só as páginas do bloco, para não estourar a memória da função.
+      for (let p = inicio; p <= fim; p++) {
+        const pagina = await pdf.getPage(p);
+        const conteudo = await pagina.getTextContent();
+        paginasTexto.push(conteudo.items.map((item: any) => item.str + (item.hasEOL ? '\n' : ' ')).join(''));
+      }
     } else {
       paginasTexto = [new TextDecoder().decode(bytes)];
       total = 1;
+      fim = 1;
     }
-
-    const inicio = Math.max(1, Number(pagina_inicio));
-    const fim = Math.min(total, inicio + PAGINAS_POR_CHAMADA - 1);
 
     if (inicio === 1) {
       await db.from('material_trechos').delete().eq('fonte_id', fonte_id);
@@ -159,7 +164,7 @@ Deno.serve(async (req) => {
     // ordem = página * 1000 + posição no bloco: única e crescente, sem contar linhas no banco.
     const trechos: { ordem: number; pagina: number; conteudo: string }[] = [];
     for (let p = inicio; p <= fim; p++) {
-      const pedacos = dividir(paginasTexto[ ehPdf ? p - 1 : 0 ] ?? '');
+      const pedacos = dividir(paginasTexto[ ehPdf ? p - inicio : 0 ] ?? '');
       pedacos.forEach((conteudo, k) => trechos.push({ ordem: p * 1000 + k, pagina: ehPdf ? p : 0, conteudo }));
     }
 
