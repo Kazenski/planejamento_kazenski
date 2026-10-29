@@ -1,0 +1,18 @@
+# Materiais-base e modelos do professor (não versionar)
+anexos/
+
+# Segredos
+.env
+.env.*
+*.key
+*.pem
+supabase/.temp/
+.supabase/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+__pycache__/
+*.pyc
+node_modules/
