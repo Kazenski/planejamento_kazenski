@@ -4,6 +4,7 @@ import { telaPainel, sairDoPainel } from './painel.js';
 import { telaCalendario } from './calendario.js';
 import { telaPlanos } from './planos.js';
 import { telaMateriais } from './materiais.js';
+import { retomarPendentes } from './fila.js';
 import { telaCadastro } from './cadastros.js';
 import { telaConfiguracoes } from './configuracoes.js';
 
@@ -59,6 +60,7 @@ function mostrarApp(sessao) {
   document.getElementById('usuario-email').textContent = sessao.user?.email || '';
   if (!location.hash || location.hash === '#') location.hash = '#/painel';
   rotear();
+  retomarPendentes().catch(() => {});
 }
 
 document.getElementById('btn-entrar').addEventListener('click', () => {

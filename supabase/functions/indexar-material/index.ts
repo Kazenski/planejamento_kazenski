@@ -131,7 +131,12 @@ Deno.serve(async (req) => {
   }
 
   try {
-    await db.from('fontes_material').update({ status: 'processando', erro_indexacao: null }).eq('id', fonte_id);
+    const comeco = Number(pagina_inicio) === 1;
+    await db.from('fontes_material').update({
+      status: 'processando',
+      erro_indexacao: null,
+      ...(comeco ? { paginas_indexadas: 0 } : {})
+    }).eq('id', fonte_id);
 
     const [bucket, ...resto] = fonte.storage_path.split('/');
     const caminho = resto.join('/');
@@ -206,7 +211,8 @@ Deno.serve(async (req) => {
     const concluido = fim >= total;
     await db.from('fontes_material').update({
       status: concluido ? 'indexado' : 'processando',
-      paginas: total
+      paginas: total,
+      paginas_indexadas: fim
     }).eq('id', fonte_id);
 
     return json({

@@ -2,6 +2,7 @@ import { supabase } from './supabase.js';
 import { listar, inserir, atualizar, excluir } from './db.js';
 import { esc, el, toast, mostrarErro, carregando, formulario, abrirModal } from './ui.js';
 import { getSessao } from './auth.js';
+import { enfileirar } from './fila.js';
 
 // Arquivos ficam no Supabase Storage, em <bucket>/<user_id>/<pasta>/<nome-seguro>.
 // Em fontes_material, storage_path guarda "<bucket>/<caminho>", por exemplo "modelos/<uid>/modelo/arquivo.docx".
@@ -33,32 +34,6 @@ function separarCaminho(storagePath) {
 function tamanho(bytes) {
   if (!bytes) return '—';
   return bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
-}
-
-async function chamarFuncao(nome, corpo) {
-  const { data, error } = await supabase.functions.invoke(nome, { body: corpo });
-  if (error) {
-    let msg = error.message;
-    try { const j = await error.context.json(); msg = j.erro || msg; } catch { /* sem JSON */ }
-    throw new Error(msg);
-  }
-  if (data?.erro) throw new Error(data.erro);
-  return data;
-}
-
-// Indexa o material em blocos de páginas, mostrando o progresso.
-export async function indexarCompleto(fonteId, aoProgresso = () => {}) {
-  let pagina = 1;
-  let trechos = 0;
-  let total = 0;
-  while (pagina) {
-    const r = await chamarFuncao('indexar-material', { fonte_id: fonteId, pagina_inicio: pagina });
-    total = r.total_paginas;
-    trechos += r.trechos;
-    aoProgresso(r.processadas_ate, total);
-    pagina = r.proxima_pagina;
-  }
-  return { total, trechos };
 }
 
 // Seletor usado na geração. Nada é lido nem consultado sem o professor marcar.
@@ -131,6 +106,11 @@ export async function telaMateriais(main) {
 
   main.querySelector('#mat-enviar').onclick = () => enviar(main, sessao).catch(mostrarErro);
   renderLista(main);
+
+  // Atualiza a tabela enquanto a fila avança, se ainda estiver nesta tela.
+  window.removeEventListener('fila-atualizada', window.__atualizaMateriais);
+  window.__atualizaMateriais = () => { if (document.getElementById('mat-lista')) renderLista(main); };
+  window.addEventListener('fila-atualizada', window.__atualizaMateriais);
 }
 
 async function enviar(main, sessao) {
@@ -166,23 +146,13 @@ async function enviar(main, sessao) {
     });
     enviados++;
     if (categoria === 'material_base' && INDEXAVEIS.test(arq.name)) {
-      await indexarComAviso(arq.name, novo.id);
+      enfileirar({ id: novo.id, nome: arq.name });
     }
     await renderLista(main);
   }
   main.querySelector('#mat-arquivos').value = '';
   toast(`${enviados} arquivo(s) enviado(s).`, 'ok');
   renderLista(main);
-}
-
-async function indexarComAviso(nome, fonteId) {
-  try {
-    toast(`Indexando ${nome}...`, '');
-    const r = await indexarCompleto(fonteId, (feito, total) => toast(`Indexando ${nome}: ${feito} de ${total} páginas`, ''));
-    toast(`${nome} indexado (${r.total} páginas, ${r.trechos} trechos).`, 'ok');
-  } catch (err) {
-    mostrarErro(err);
-  }
 }
 
 function formularioClassificacao(item) {
@@ -269,7 +239,7 @@ async function renderLista(main) {
             <td>${esc(i.area_especifica || '—')}</td>
             <td>${(i.disciplinas || []).map((d) => `<span class="tag">${esc(d)}</span>`).join(' ') || '—'}</td>
             <td>${i.paginas ?? '—'}</td>
-            <td><span class="tag ${i.status === 'indexado' ? 'verde' : i.status === 'erro' ? 'perigo' : ''}" title="${esc(i.erro_indexacao || '')}">${esc(STATUS_ROTULO[i.status] || i.status)}</span></td>
+            <td><span class="tag ${i.status === 'indexado' ? 'verde' : i.status === 'erro' ? 'perigo' : ''}" title="${esc(i.erro_indexacao || '')}">${esc(STATUS_ROTULO[i.status] || i.status)}</span>${i.status === 'processando' ? `<div class="small muted">${i.paginas_indexadas ?? 0} de ${i.paginas ?? '?'} páginas</div>` : ''}</td>
             <td class="acoes-linha">
               ${i.categoria === 'material_base' && i.status !== 'indexado' && INDEXAVEIS.test(i.nome) ? `<button class="btn pequeno azul" data-indexar="${i.id}" type="button">Indexar</button>` : ''}
               ${i.categoria === 'material_base' ? `<button class="btn pequeno" data-editar="${i.id}" type="button">Classificar</button>` : ''}
@@ -287,8 +257,8 @@ async function renderLista(main) {
       const apagar = b('[data-apagar]');
       if (indexar) {
         const item = itens.find((x) => x.id === indexar.dataset.indexar);
-        await indexarComAviso(item.nome, item.id);
-        renderLista(main);
+        enfileirar({ id: item.id, nome: item.nome });
+        toast(`${item.nome} entrou na fila. Pode continuar usando o site.`, 'ok');
       }
       if (editar) {
         const item = itens.find((x) => x.id === editar.dataset.editar);
