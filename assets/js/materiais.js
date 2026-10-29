@@ -143,6 +143,11 @@ async function enviar(main, sessao) {
   const bucket = BUCKET[categoria];
   let enviados = 0;
   for (const arq of arquivos) {
+    const limite = categoria === 'modelo' ? 50 : 200;
+    if (arq.size > limite * 1024 * 1024) {
+      toast(`${arq.name} passa de ${limite} MB e não pode ser enviado.`, 'erro');
+      continue;
+    }
     const caminho = `${userId}/${PASTA[categoria]}/${nomeSeguro(arq.name)}`;
     toast(`Enviando ${arq.name}...`, '');
     const { error } = await supabase.storage.from(bucket).upload(caminho, arq, {

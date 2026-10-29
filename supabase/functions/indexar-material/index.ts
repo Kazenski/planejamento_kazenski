@@ -99,7 +99,7 @@ FORMATO:
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chaveGemini() },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.2 }
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.2, maxOutputTokens: 2000, thinkingConfig: { thinkingBudget: 0 } }
     })
   });
   if (!resp.ok) throw new Error(`A IA respondeu com erro ${resp.status} ao classificar.`);
@@ -183,7 +183,9 @@ Deno.serve(async (req) => {
     }
 
     // Classificação automática, feita uma vez (o professor confirma ou ajusta depois).
+    // Falha na sugestão não impede a indexação: o professor classifica manualmente.
     if (inicio === 1 && !fonte.sugestao) {
+      try {
       const amostra = paginasTexto.slice(0, 4).join('\n').slice(0, 12000);
       const { data: discs } = await db.from('disciplinas').select('nome');
       const sugestao = await classificar(fonte.nome, amostra, (discs ?? []).map((d: any) => d.nome));
@@ -194,6 +196,9 @@ Deno.serve(async (req) => {
       if (!fonte.resumo && sugestao.resumo) atualizar.resumo = sugestao.resumo;
       if ((!fonte.disciplinas || fonte.disciplinas.length === 0) && Array.isArray(sugestao.disciplinas)) atualizar.disciplinas = sugestao.disciplinas;
       await db.from('fontes_material').update(atualizar).eq('id', fonte_id);
+      } catch (erroSugestao) {
+        console.error('Classificação automática falhou:', (erroSugestao as Error).message);
+      }
     }
 
     const concluido = fim >= total;
