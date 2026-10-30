@@ -19,6 +19,7 @@ const estado = {
 };
 let dados = null;
 let arrastando = null;
+let selecionadaId = null;
 
 function colegioCor(colegioId) {
   const i = dados.colegios.findIndex((c) => c.id === colegioId);
@@ -165,8 +166,9 @@ function cardHtml(card, datasSemana) {
   const h = horarioDaAula(card);
   const faixa = h.inicio ? `${hora(h.inicio)}${h.fim ? '–' + hora(h.fim) : ''}` : '';
   return `
-    <div class="aula ${desativada ? 'off' : ''}" draggable="${desativada ? 'false' : 'true'}" data-horario="${card.id}"
-      style="border-left-color:${corDoCard(v)}" title="${desativada ? `Sem aula: ${esc(cal.motivo)}` : 'Clique para ajustar o horário'}">
+    <div class="aula ${desativada ? 'off' : ''} ${selecionadaId === card.id ? 'selecionada' : ''}" draggable="${desativada ? 'false' : 'true'}" data-horario="${card.id}"
+      style="border-left-color:${corDoCard(v)}" title="${desativada ? `Sem aula: ${esc(cal.motivo)}` : 'Clique para selecionar e depois clique num dia e período'}">
+      <button type="button" class="aula-hora" data-hora="${card.id}" title="Horário desta aula">⏱</button>
       <strong>${esc(v.disciplinas?.nome || '—')}</strong>
       <div class="small">${esc(v.turmas?.nome || '')}${estado.colegioId === 'todos' ? ` · ${esc(v.turmas?.colegios?.nome || '')}` : ''}</div>
       ${faixa ? `<div class="small"><span class="muted">⏱</span> ${esc(faixa)}${h.proprio ? ' <span class="tag laranja" style="font-size:10px">próprio</span>' : ''}</div>` : ''}
@@ -324,6 +326,10 @@ function desenhar(main) {
         </div>
 
         <div class="card">
+          ${selecionadaId ? `<div class="ma-barra-sel">
+            <span><strong>Aula selecionada:</strong> ${esc(visiveis.find((h) => h.id === selecionadaId)?.vinculo.disciplinas?.nome || '')} — clique num dia e período para colocar, ou na área "sem dia" para tirar do horário.</span>
+            <button class="btn pequeno" id="ma-cancelar" type="button">Cancelar</button>
+          </div>` : '<p class="small muted" style="margin:0 0 10px">Clique numa aula para selecioná-la. Depois clique num dia e período. Você também pode arrastar.</p>'}
           ${legenda}
           <div id="ma-bandeja" class="ma-bandeja" data-bandeja="1">
             <strong class="small">Aulas sem dia (arraste para o horário):</strong>
@@ -384,11 +390,36 @@ export async function telaMinhasAulas(main) {
     desenhar(main);
   };
 
-  main.onclick = (e) => {
+  main.onclick = async (e) => {
+    const botaoHora = e.target.closest('.aula-hora');
+    if (botaoHora) {
+      const card = horariosVisiveis().find((h) => h.id === botaoHora.dataset.hora);
+      if (card) abrirHorarioAula(card);
+      return;
+    }
     const aula = e.target.closest('.aula');
     if (aula) {
-      const card = horariosVisiveis().find((h) => h.id === aula.dataset.horario);
-      if (card) abrirHorarioAula(card);
+      selecionadaId = selecionadaId === aula.dataset.horario ? null : aula.dataset.horario;
+      desenhar(main);
+      return;
+    }
+    if (e.target.closest('#ma-cancelar')) {
+      selecionadaId = null;
+      desenhar(main);
+      return;
+    }
+    const destino = e.target.closest('.ma-celula, [data-bandeja]');
+    if (destino && selecionadaId) {
+      try {
+        if (destino.dataset.bandeja) {
+          await atualizar('horario_aulas', selecionadaId, { dia_semana: null, periodo: null });
+        } else {
+          const ok = await posicionar(selecionadaId, Number(destino.dataset.dia), Number(destino.dataset.periodo));
+          if (!ok) return;
+        }
+        selecionadaId = null;
+        await recarregarEDesenhar(main);
+      } catch (err) { mostrarErro(err); }
       return;
     }
     if (e.target.closest('#ma-sem-ant')) estado.semana = somarDias(estado.semana, -7);
@@ -439,6 +470,18 @@ export async function telaMinhasAulas(main) {
     } catch (err) { mostrarErro(err); }
   };
   main.ondragend = () => { arrastando = null; main.querySelectorAll('.drop-over').forEach((x) => x.classList.remove('drop-over')); };
+}
+
+// Coloca uma aula em um dia e período, se o período for aula no colégio dela.
+async function posicionar(id, dia, ordem) {
+  const h = dados.horarios.find((x) => x.id === id);
+  const colegioId = dados.vinculos.find((v) => v.id === h?.turma_disciplina_id)?.turmas?.colegio_id;
+  if (colegioId && !periodoEhAula(colegioId, ordem)) {
+    toast('Este período é intervalo no colégio desta aula.', 'erro');
+    return false;
+  }
+  await atualizar('horario_aulas', id, { dia_semana: dia, periodo: ordem });
+  return true;
 }
 
 // Liga ou desliga uma disciplina da turma para o professor.

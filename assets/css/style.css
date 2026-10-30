@@ -196,6 +196,12 @@ dialog.grande { width: min(1000px, calc(100vw - 32px)); }
 .aula strong { color: var(--marinho); display: block; line-height: 1.25; }
 .aula.off { background: #E5E7EB; border-color: #D1D5DB; border-left-color: #9CA3AF !important; color: #6B7280; cursor: not-allowed; filter: grayscale(1); }
 .aula.off strong { color: #6B7280; }
+.aula.selecionada { box-shadow: 0 0 0 3px var(--laranja); }
+.aula-hora { float: right; border: none; background: none; cursor: pointer; font-size: 13px; padding: 0 0 0 6px; color: var(--cinza); }
+.aula-hora:hover { color: var(--laranja); }
+.ma-barra-sel { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--laranja-suave); border: 1px solid #FFD3BF; color: #5A2A12; padding: 10px 12px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; }
+.ma-grade .ma-celula { cursor: pointer; }
+.ma-grade .ma-celula:hover { border-color: var(--laranja); }
 @media (max-width: 1000px) { .ma-layout { grid-template-columns: 1fr; } }
 .kpi.laranja::before { background: var(--laranja); }
 .cal-controles { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
