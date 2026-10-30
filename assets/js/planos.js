@@ -176,7 +176,10 @@ async function abaAnual(area) {
   area.innerHTML = `
     <div class="acoes" style="justify-content:space-between;margin-bottom:14px">
       <p class="muted" style="margin:0">Um plano por turma, disciplina e versão. Ao virar o ano, crie a partir do plano anterior e ajuste os conteúdos.</p>
-      <button class="btn primary" id="btn-novo-anual" type="button">+ Novo plano anual</button>
+      <div class="acoes">
+        <button class="btn" id="btn-importar-anual" type="button">Importar plano anterior</button>
+        <button class="btn primary" id="btn-novo-anual" type="button">+ Novo plano anual</button>
+      </div>
     </div>
     ${planos.length ? `
     <div class="tabela-wrap"><table class="tabela">
@@ -202,6 +205,7 @@ async function abaAnual(area) {
     </table></div>` : '<div class="tabela-wrap"><div class="vazio">Nenhum plano anual ainda. Cadastre turma e disciplinas, depois clique em "+ Novo plano anual".</div></div>'}`;
 
   area.querySelector('#btn-novo-anual').onclick = () => abrirNovoAnual(planos).catch(mostrarErro);
+  area.querySelector('#btn-importar-anual').onclick = () => abrirImportarAnual(area).catch(mostrarErro);
 
   area.onclick = async (e) => {
     const b = e.target.closest('button[data-ver],button[data-ia],button[data-editar],button[data-excluir]');
@@ -251,6 +255,61 @@ function abrirVerAnual(plano) {
     ${renderPlanoAnual(plano.conteudo?.plano)}
   </div>`);
   abrirModal({ titulo: `Plano anual · ${plano.disciplinas?.nome}`, conteudo, grande: true });
+}
+
+// Importa um plano anual anterior (DOCX ou PDF): o arquivo vai ao Storage e a IA converte o texto no plano do sistema.
+async function abrirImportarAnual(area) {
+  const [turmas, disciplinas] = await Promise.all([
+    listar('turmas', { select: '*, colegios(nome)', ordem: 'nome' }),
+    listar('disciplinas', { ordem: 'nome' })
+  ]);
+  if (!turmas.length) throw new Error('Cadastre uma turma antes de importar um plano.');
+  const conteudo = el(`<div>
+    <div class="aviso azul" style="margin-bottom:14px">Envie o plano anterior em DOCX ou PDF. A IA lê o arquivo e preenche um plano anual no formato do sistema. Depois você revisa o plano e gera os mensais e diários.</div>
+    <div class="campos-grid">
+      <label class="campo"><span>Turma</span><select id="imp-turma"><option value="">Escolha a turma</option>${turmas.map((t) => `<option value="${t.id}">${esc(t.colegios?.nome || '')} · ${esc(t.nome)} (${t.ano})</option>`).join('')}</select></label>
+      <label class="campo"><span>Disciplina</span><select id="imp-disc"><option value="">Escolha a disciplina</option>${disciplinas.map((d) => `<option value="${d.id}">${esc(d.nome)} (${d.ano})</option>`).join('')}</select></label>
+      <label class="campo"><span>Ano letivo</span><input type="number" id="imp-ano" value="${new Date().getFullYear()}"></label>
+      <label class="campo"><span>Arquivo do plano (DOCX ou PDF)</span><input type="file" id="imp-arquivo" accept=".docx,.pdf"></label>
+    </div>
+  </div>`);
+  abrirModal({
+    titulo: 'Importar plano anual anterior',
+    conteudo,
+    grande: true,
+    submitLabel: 'Importar com IA',
+    onSubmit: async (fechar) => {
+      const turmaId = conteudo.querySelector('#imp-turma').value;
+      const discId = conteudo.querySelector('#imp-disc').value;
+      const ano = Number(conteudo.querySelector('#imp-ano').value);
+      const arq = conteudo.querySelector('#imp-arquivo').files[0];
+      if (!turmaId || !discId || !ano || !arq) throw new Error('Escolha turma, disciplina, ano e o arquivo.');
+      if (!/\.(docx|pdf)$/i.test(arq.name)) throw new Error('Envie um arquivo DOCX ou PDF.');
+      if (arq.size > 20 * 1024 * 1024) throw new Error('O arquivo passa de 20 MB.');
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Sessão expirada. Entre novamente.');
+      const seguro = arq.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '-');
+      const caminho = `${user.id}/planos_anteriores/${Date.now()}-${seguro}`;
+      const { error: erroUp } = await supabase.storage.from('materiais').upload(caminho, arq, {
+        contentType: arq.type || 'application/octet-stream',
+        upsert: false
+      });
+      if (erroUp) throw new Error(`Não foi possível enviar o arquivo: ${erroUp.message}`);
+      fechar();
+      toast('Importando o plano com IA. Isso pode levar alguns segundos...', '');
+      const { data, error } = await supabase.functions.invoke('importar-plano', {
+        body: { caminho, nome: arq.name, turma_id: turmaId, disciplina_id: discId, ano }
+      });
+      if (error) {
+        let msg = error.message;
+        try { const j = await error.context.json(); msg = j.erro || msg; } catch { /* sem corpo JSON */ }
+        throw new Error(msg);
+      }
+      if (data?.erro) throw new Error(data.erro);
+      toast('Plano anual importado. Revise o conteúdo.', 'ok');
+      abaAnual(area);
+    }
+  });
 }
 
 async function abrirNovoAnual(planos) {
