@@ -33,10 +33,36 @@ async function embedConsulta(texto: string): Promise<number[]> {
 
 // Monta o bloco extra do prompt: observações do professor e trechos dos materiais escolhidos.
 // Sem materiais escolhidos, nada é lido nem consultado (sem custo extra).
-async function materiaisParaPrompt(db: any, corpo: any, consultaTexto: string): Promise<string> {
+const LIMITE_ORIENTADOR = 120000;
+
+// Orientadores do curso (ex.: matriz de conteúdos): entram inteiros, em ordem, sem depender da busca.
+async function orientadoresDoCurso(db: any, cursoId: string | null | undefined): Promise<string> {
+  if (!cursoId) return '';
+  const { data: fontes } = await db.from('fontes_material').select('id, nome')
+    .eq('curso_id', cursoId).eq('orientador', true).eq('status', 'indexado');
+  if (!fontes?.length) return '';
+  const ids = fontes.map((f: any) => f.id);
+  const nomes = new Map(fontes.map((f: any) => [f.id, f.nome]));
+  const { data: trechos } = await db.from('material_trechos')
+    .select('fonte_id, pagina, conteudo, ordem').in('fonte_id', ids).order('fonte_id').order('ordem').limit(5000);
+  let txt = 'ORIENTAÇÕES OBRIGATÓRIAS DO CURSO (matriz de conteúdos por disciplina: siga-as ao planejar)\n';
+  let usado = txt.length;
+  for (const t of trechos ?? []) {
+    const bloco = `[${nomes.get(t.fonte_id) ?? 'orientação'}${t.pagina ? `, p. ${t.pagina}` : ''}] ${t.conteudo}\n---\n`;
+    if (usado + bloco.length > LIMITE_ORIENTADOR) {
+      txt += '\n[trecho omitido: o material do curso é maior que o limite de contexto]\n';
+      break;
+    }
+    txt += bloco;
+    usado += bloco.length;
+  }
+  return txt + '\n';
+}
+
+async function materiaisParaPrompt(db: any, corpo: any, consultaTexto: string, cursoId?: string | null): Promise<string> {
   const fonteIds: string[] = Array.isArray(corpo.fonte_ids) ? corpo.fonte_ids : [];
   const obs = String(corpo.observacoes || '').trim();
-  let txt = '';
+  let txt = await orientadoresDoCurso(db, cursoId);
   if (obs) txt += `OBSERVAÇÕES DO PROFESSOR (considere ao planejar)\n${obs}\n\n`;
   if (fonteIds.length && consultaTexto.trim()) {
     const vetor = await embedConsulta(consultaTexto);
@@ -133,7 +159,7 @@ async function vincularHabilidades(db: any, userId: string, planoId: string, cod
 
 async function carregarAnual(db: any, planoId: string) {
   const { data, error } = await db.from('planos_anuais')
-    .select('*, turmas(nome, ano, serie, curso, qtd_alunos, observacoes, colegios(nome)), disciplinas(nome)')
+    .select('*, turmas(nome, ano, serie, curso, curso_id, qtd_alunos, observacoes, colegios(nome)), disciplinas(nome)')
     .eq('id', planoId).single();
   if (error || !data) throw new Error('Plano anual não encontrado.');
   const { data: vinc } = await db.from('turma_disciplinas').select('aulas_semana')
@@ -146,7 +172,7 @@ async function gerarAnual(db: any, userId: string, planoId: string, habilidades:
   const entrada = (plano.conteudo?.entrada?.conteudos || []).filter((c: any) => c.status !== 'removido');
   if (!entrada.length) throw new Error('Cadastre os conteúdos do ano antes de gerar.');
 
-  const extra = await materiaisParaPrompt(db, corpo, entrada.map((c: any) => `${c.titulo}${c.observacao ? ': ' + c.observacao : ''}`).join('\n'));
+  const extra = await materiaisParaPrompt(db, corpo, entrada.map((c: any) => `${c.titulo}${c.observacao ? ': ' + c.observacao : ''}`).join('\n'), plano.turmas?.curso_id);
   const prompt = `${REGRAS_BASE}
 
 TAREFA: criar o PLANO ANUAL detalhado da disciplina, para um professor adaptar ao documento do colégio.
@@ -232,7 +258,7 @@ async function gerarMensal(db: any, userId: string, corpo: any, habilidades: any
     if (!existe) propostaEntrada.push({ titulo: e, trimestre: TRIMESTRE_DO_MES(mes), status: 'novo', observacao: `Incluído para ${mes}/${anual.ano}` });
   }
 
-  const extra = await materiaisParaPrompt(db, corpo, [...trabalhar.map((c: any) => c.titulo), ...extras].join('\n'));
+  const extra = await materiaisParaPrompt(db, corpo, [...trabalhar.map((c: any) => c.titulo), ...extras].join('\n'), anual.turmas?.curso_id);
   const prompt = `${REGRAS_BASE}
 
 TAREFA: criar o PLANO MENSAL de ${mes}/${anual.ano}, como recorte do plano anual. Mantenha coerência com o anual e com o que o professor marcou.
@@ -300,14 +326,14 @@ function TRIMESTRE_DO_MES(mes: number) {
 
 async function gerarDiario(db: any, userId: string, corpo: any, habilidades: any[]) {
   const { data: mensal, error } = await db.from('planos_mensais')
-    .select('*, planos_anuais(id, ano, conteudo, turma_id, disciplina_id, turmas(nome, serie, curso, observacoes, colegios(nome)), disciplinas(nome))')
+    .select('*, planos_anuais(id, ano, conteudo, turma_id, disciplina_id, turmas(nome, serie, curso, curso_id, observacoes, colegios(nome)), disciplinas(nome))')
     .eq('id', corpo.plano_mensal_id).single();
   if (error || !mensal) throw new Error('Plano mensal não encontrado.');
   const dias: { data: string; aulas: number }[] = corpo.dias || [];
   if (!dias.length) throw new Error('Nenhum dia letivo informado.');
   const pa = mensal.planos_anuais;
 
-  const extra = await materiaisParaPrompt(db, corpo, (mensal.conteudo?.conteudos || []).map((c: any) => c.titulo).join('\n'));
+  const extra = await materiaisParaPrompt(db, corpo, (mensal.conteudo?.conteudos || []).map((c: any) => c.titulo).join('\n'), pa.turmas?.curso_id);
   const prompt = `${REGRAS_BASE}
 
 TAREFA: criar o PLANO DIÁRIO de cada dia letivo abaixo. Cada dia traz o conteúdo da aula e a PRÁTICA DOCENTE: como o professor conduz a aula (organização, atividades, passos, recursos e forma de checar a aprendizagem).

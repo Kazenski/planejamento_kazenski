@@ -1,6 +1,7 @@
 ﻿import { listar, inserir, inserirVarios, atualizar, excluir } from './db.js';
 import { esc, abrirModal, formulario, mostrarErro, toast, carregando, lista } from './ui.js';
 import { SERIES } from './config.js';
+import { abrirMateriaisCurso } from './curso_materiais.js';
 
 const anoAtual = new Date().getFullYear();
 const norm = (s) => String(s || '').trim().toLowerCase();
@@ -285,6 +286,7 @@ export async function telaCadastro(main, chave) {
               <tr data-id="${i.id}">
                 ${cfg.colunas.map((c) => `<td>${c.valor(i)}</td>`).join('')}
                 <td class="acoes-linha">
+                  ${chave === 'cursos' ? `<button class="btn pequeno azul" data-materiais="${i.id}" type="button">Materiais</button>` : ''}
                   <button class="btn pequeno" data-editar="${i.id}" type="button">Editar</button>
                   <button class="btn pequeno perigo" data-excluir="${i.id}" type="button">Excluir</button>
                 </td>
@@ -382,6 +384,10 @@ export async function telaCadastro(main, chave) {
   document.getElementById('area-lista').addEventListener('click', async (e) => {
     const editar = e.target.closest('[data-editar]');
     const excluirBtn = e.target.closest('[data-excluir]');
+    const materiais = e.target.closest('[data-materiais]');
+    if (materiais) {
+      abrirMateriaisCurso(dadosAtuais.find((d) => d.id === materiais.dataset.materiais));
+    }
     if (editar) {
       const item = dadosAtuais.find((d) => d.id === editar.dataset.editar);
       abrirForm(item).catch(mostrarErro);

@@ -40,7 +40,7 @@ function tamanho(bytes) {
 export async function seletorMateriais({ disciplina = null } = {}) {
   const itens = await listar('fontes_material', {
     ordem: 'nome',
-    ajuste: (q) => q.eq('categoria', 'material_base').eq('status', 'indexado')
+    ajuste: (q) => q.eq('categoria', 'material_base').eq('status', 'indexado').eq('orientador', false)
   });
   const bloco = el('<div class="card" style="box-shadow:none;border:1px solid var(--borda);margin-bottom:16px"></div>');
   bloco.innerHTML = `
