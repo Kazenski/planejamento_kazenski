@@ -283,6 +283,20 @@ async function gerarAnual(db: any, userId: string, planoId: string, habilidades:
   const entrada = (plano.conteudo?.entrada?.conteudos || []).filter((c: any) => c.status !== 'removido');
   if (!entrada.length) throw new Error('Cadastre os conteúdos do ano antes de gerar.');
 
+  let ideiaTexto = String(corpo.ideia_texto || '').trim();
+  if (!ideiaTexto && corpo.ideia_arquivo_caminho && corpo.ideia_arquivo_nome) {
+    try {
+      ideiaTexto = await textoDeArquivo(db, corpo.ideia_arquivo_caminho, corpo.ideia_arquivo_nome);
+    } catch (e) {
+      // Não impede a geração caso falhe ao ler o anexo
+      ideiaTexto = '';
+    }
+  }
+
+  const projeto = String(corpo.projeto || '').trim();
+  const reservar = String(corpo.reservar_para_projeto || 'decidir').trim();
+  const redistribuir = String(corpo.redistribuir_conteudo || 'essenciais').trim();
+
   const extra = await materiaisParaPrompt(db, corpo, entrada.map((c: any) => `${c.titulo}${c.observacao ? ': ' + c.observacao : ''}`).join('\n'), plano.turmas?.curso_id);
   const prompt = `${REGRAS_BASE}
 
@@ -298,13 +312,26 @@ ${EIXOS_CBTC}
 
 HABILIDADES: para cada conteúdo, vincule no máximo 3 códigos do CATÁLOGO DE HABILIDADES, só os que tratam diretamente do objeto do conhecimento. Para ensino médio, use os códigos EM13CO e não use códigos EF (ensino fundamental). Use só códigos desse catálogo. Nas competências gerais e específicas, use os textos de eixo listados acima e o texto da BNCC quando houver.
 
-CARGA DE AULAS: são ${plano.aulas_semana ?? 'não informado'} aulas por semana e cerca de 12 semanas por trimestre. A soma de aulas_estimadas de cada trimestre deve ficar perto de ${(plano.aulas_semana ?? 0) * 12}.
+CARGA DE AULAS: são ${plano.aulas_semana ?? 'não informado'} aulas por semana e cerca de 12 semanas por trimestre. A soma de aulas_estimadas de cada trimestre deve ficar perto de ${(plano.aulas_semana ?? 0) * 12}. Não deixe a soma muito distante desse valor. Distribua com coerência entre os trimestres.
 
 PREENCHIMENTO: preencha TODAS as seções acima, inclusive recomposição, projetos integradores, temas transversais, avaliação e referências. Em referencias, liste os materiais usados com autor, título e ano quando forem conhecidos (se não souber o autor, use só o título). Não invente autores. Se o material não trouxer o conteúdo de uma seção, proponha algo coerente com o curso e a disciplina, e registre em observacoes quais seções foram propostas por você.
 
 PROJETOS E AVALIAÇÃO DEFINIDOS PELO PROFESSOR
 ${corpo.projetos ? `- Projetos que o professor quer desenvolver com a turma: ${corpo.projetos}. Adapte os conteúdos, tópicos e atividades para que esses projetos façam parte do ano: use-os em projetos integradores e nos conteúdos em que se encaixam.` : '- Nenhum tipo de projeto foi indicado. Proponha projetos integradores coerentes com o curso e registre isso em observacoes.'}
 ${corpo.substituir_provas === 'todas' ? '- Substitua as provas pela aplicação do projeto: na avaliação de cada conteúdo, a prova escrita vira a entrega ou apresentação do projeto.' : corpo.substituir_provas === 'algumas' ? '- Substitua a prova por aplicação do projeto em algumas avaliações. Diga em avaliacao de cada conteúdo quais são essas avaliações.' : '- Mantenha as provas escritas. O projeto é complementar à avaliação.'}
+
+PROJETO/DINÂMICA IDEA PELO PROFESSOR (PRIORITÁRIO)
+${projeto ? `- Título/ideia: ${projeto}` : '- Nenhum projeto/dinâmica foi descrito pelo professor.'}
+${ideiaTexto ? `- Detalhes/rascunho anexado ou colado pelo professor:\n${ideiaTexto}` : '- Sem anexo/rascunho adicional.'}
+- Reservar aulas para aplicação/orientação do projeto: ${reservar === 'sim' ? 'SIM. Reserve um bloco de aulas para aplicação, desenvolvimento, testes e apresentação do projeto.' : reservar === 'nao' ? 'NÃO. Não reserve aulas exclusivamente para o projeto, mas aproveite momentos de aplicação quando couber.' : 'DECIDIR COM INTELIGÊNCIA. Analise a carga horária, pré-requisitos e viabilidade para a turma.'}
+- Abrir mão de aulas de conteúdos para dar espaço ao projeto: ${redistribuir === 'todos' ? 'SIM, posso redistribuir. Se necessário, reduza aulas de conteúdos secundários para abrir espaço ao projeto/aplicação.' : redistribuir === 'nenhum' ? 'NÃO. Mantenha a carga horária dos conteúdos exatamente coerente com o que foi planejado, sem reduzir.' : 'APENAS conteúdos menos essenciais. NÃO reduza conteúdos que sejam pré-requisito direto para o projeto ou estruturantes da disciplina. Diminua com critério, priorizando conteúdos pontuais.'}
+
+ORIENTAÇÕES PARA PROJETO/APLICAÇÃO
+- Se houver projeto/dinâmica e fizer sentido, CRIE um conteúdo/ação prática com o título claro no trimestre mais adequado (pode ser ao longo de trimestres). Chame de algo como "Projeto/Aplicação prática" ou mantenha coerente com o tema.
+- Gere um bloco detalhado: objetivos, etapas/passos, divisão por aulas, materiais, forma de acompanhamento/orientação, avaliação (entrega/apresentação/autoavaliação).
+- Redistribua "aulas_estimadas" entre os conteúdos: ao reservar aulas para o projeto, reduza proporcionalmente as aulas dos conteúdos escolhidos com critério. A soma por trimestre deve continuar próxima de ${plano.aulas_semana ?? 0} * 12.
+- Não crie um projeto genérico solto. Relacione com pelo menos alguns conteúdos do ano e com as habilidades do catálogo quando aplicável.
+- Em "observacoes", explique OBJETIVAMENTE: quais conteúdos tiveram carga reduzida (se houver), quantas aulas foram reservadas para o projeto/aplicação e o motivo da redistribuição.
 
 CONTEXTO
 - Colégio: ${plano.turmas?.colegios?.nome}

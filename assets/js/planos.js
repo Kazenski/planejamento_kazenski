@@ -231,7 +231,7 @@ async function abaAnual(area) {
 async function abrirGerarAnual(plano, area) {
   const seletor = await seletorMateriais({ disciplina: plano.disciplinas?.nome });
   const perguntas = el(`<div class="card" style="box-shadow:none;border:1px solid var(--borda);margin-bottom:16px">
-    <h3 style="margin-bottom:6px">Projetos e avaliação</h3>
+    <h3 style="margin-bottom:6px">Projetos, dinâmica e avaliação</h3>
     <label class="campo"><span>Que tipos de projeto você quer desenvolver com a turma?</span>
       <textarea id="gen-projetos" placeholder="Ex.: sistema de gestão de estoque para a loja da escola; aplicativo de cadastro; jogo com lógica de programação"></textarea></label>
     <label class="campo" style="margin-top:12px"><span>Você quer trocar provas pela aplicação desses projetos?</span>
@@ -241,8 +241,32 @@ async function abrirGerarAnual(plano, area) {
         <option value="algumas">Sim, só em algumas (descreva em observações)</option>
       </select></label>
   </div>`);
+  const projetoBloco = el(`<div class="card" style="box-shadow:none;border:1px solid var(--borda);margin-bottom:16px">
+    <h3 style="margin-bottom:6px">Projeto/dinâmica para este ano</h3>
+    <p class="small muted" style="margin-top:-4px;margin-bottom:12px">Descreva a ideia que quer colocar em prática com a turma. A IA vai tentar encaixar no plano e, se autorizado, redistribuir aulas entre conteúdo e aplicação.</p>
+    <label class="campo"><span>Título ou ideia do projeto/dinâmica</span>
+      <textarea id="gen-projeto-ideia" placeholder="Ex.: Criar um site para a feira de ciências com cadastro de visitantes"></textarea></label>
+    <label class="campo" style="margin-top:12px"><span>Colar detalhes, etapas ou rascunho</span>
+      <textarea id="gen-projeto-texto" placeholder="Cole aqui objetivos, etapas, produtos esperados, público, etc."></textarea></label>
+    <label class="campo" style="margin-top:12px"><span>Anexar ideia (.TXT, .MD, .PDF, .DOCX)</span>
+      <input type="file" id="gen-projeto-arq" accept=".txt,.md,.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"></label>
+    <div class="campos-grid" style="margin-top:12px">
+      <label class="campo"><span>Reservar aulas para aplicação/orientação do projeto?</span>
+        <select id="gen-reservar">
+          <option value="decidir">Decidir com a IA</option>
+          <option value="sim">Sim, reservar aulas para o projeto</option>
+          <option value="nao">Não, não reservar aulas exclusivas</option>
+        </select></label>
+      <label class="campo"><span>Abrir mão de aulas de conteúdo para isso?</span>
+        <select id="gen-redistribuir">
+          <option value="essenciais">Apenas conteúdos menos essenciais (critério)</option>
+          <option value="todos">Sim, posso reduzir conteúdos secundários se necessário</option>
+          <option value="nenhum">Não, manter toda a carga horária dos conteúdos</option>
+        </select></label>
+    </div>
+  </div>`);
   const conteudo = el('<div></div>');
-  conteudo.append(perguntas, seletor.el);
+  conteudo.append(perguntas, projetoBloco, seletor.el);
   abrirModal({
     titulo: `Gerar plano anual · ${plano.disciplinas?.nome}`,
     conteudo,
@@ -253,9 +277,47 @@ async function abrirGerarAnual(plano, area) {
       if (!fonte_ids.length) throw new Error('Marque ao menos um material na Base para a IA antes de gerar.');
       fechar();
       toast('Gerando o plano anual com IA. Isso pode levar alguns segundos...', '');
+
       const projetos = perguntas.querySelector('#gen-projetos').value.trim();
       const substituir_provas = perguntas.querySelector('#gen-provas').value;
-      await invocarIA({ tipo: 'anual', plano_id: plano.id, fonte_ids, observacoes, projetos, substituir_provas });
+      const projetoIdeia = projetoBloco.querySelector('#gen-projeto-ideia').value.trim();
+      const projetoTexto = projetoBloco.querySelector('#gen-projeto-texto').value.trim();
+      const reservar = projetoBloco.querySelector('#gen-reservar').value;
+      const redistribuir = projetoBloco.querySelector('#gen-redistribuir').value;
+      const arq = projetoBloco.querySelector('#gen-projeto-arq').files[0];
+
+      let ideia_arquivo_caminho = null;
+      let ideia_arquivo_nome = null;
+      if (arq) {
+        if (!/\.(txt|md|pdf|docx)$/i.test(arq.name)) throw new Error('Anexe um arquivo .TXT, .MD, .PDF ou .DOCX.');
+        if (arq.size > 20 * 1024 * 1024) throw new Error('O arquivo passa de 20 MB.');
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Sessão expirada. Entre novamente.');
+        const seguro = arq.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '-');
+        const caminho = `${user.id}/projetos_ideias/${Date.now()}-${seguro}`;
+        const { error: erroUp } = await supabase.storage.from('materiais').upload(caminho, arq, {
+          contentType: arq.type || 'application/octet-stream',
+          upsert: false
+        });
+        if (erroUp) throw new Error(`Não foi possível enviar o arquivo da ideia: ${erroUp.message}`);
+        ideia_arquivo_caminho = caminho;
+        ideia_arquivo_nome = arq.name;
+      }
+
+      await invocarIA({
+        tipo: 'anual',
+        plano_id: plano.id,
+        fonte_ids,
+        observacoes,
+        projetos,
+        substituir_provas,
+        projeto: projetoIdeia,
+        ideia_texto: projetoTexto,
+        ideia_arquivo_caminho,
+        ideia_arquivo_nome,
+        reservar_para_projeto: reservar,
+        redistribuir_conteudo: redistribuir
+      });
       toast('Plano anual gerado.', 'ok');
       abaAnual(area);
     }
