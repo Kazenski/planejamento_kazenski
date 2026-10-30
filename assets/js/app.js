@@ -14,6 +14,7 @@ const ROTAS = {
   planos: telaPlanos,
   materiais: telaMateriais,
   colegios: (main) => telaCadastro(main, 'colegios'),
+  cursos: (main) => telaCadastro(main, 'cursos'),
   turmas: (main) => telaCadastro(main, 'turmas'),
   disciplinas: (main) => telaCadastro(main, 'disciplinas'),
   aulas: (main) => telaCadastro(main, 'aulas'),
