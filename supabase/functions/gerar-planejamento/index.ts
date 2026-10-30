@@ -135,7 +135,7 @@ Deno.serve(async (req) => {
     const habilidades = (await db.from('habilidades').select('id, codigo, descricao')).data ?? [];
     const materiais = (await db.from('fontes_material').select('id, nome, categoria')).data ?? [];
 
-    if (corpo.tipo === 'anual') return json(await gerarAnual(db, user.id, corpo.plano_id, habilidades, materiais, corpo));
+    if (corpo.tipo === 'anual') return json(await gerarAnual(db, user.id, corpo.plano_id, habilidades, materiais, { ...corpo, professor: user.user_metadata?.full_name || user.email }));
     if (corpo.tipo === 'mensal') return json(await gerarMensal(db, user.id, corpo, habilidades, materiais));
     if (corpo.tipo === 'diario') return json(await gerarDiario(db, user.id, corpo, habilidades));
     return json({ erro: 'Tipo de planejamento inválido.' }, 400);
@@ -205,6 +205,25 @@ PENSAMENTO COMPUTACIONAL
 - PCEMPC01: Resolver problemas por meio do desenvolvimento de algoritmos e implementá-los em linguagens de programação textual.
 - PCEMCD01: Coletar, organizar, visualizar e interpretar conjuntos de dados para extração de informações, conhecimentos, criações de previsões que apoiem a tomada de decisão.`;
 
+// Distribui as aulas de cada trimestre para o total pedido (aulas por semana × semanas), proporcionalmente.
+function ajustarCargaAulas(plano: any, porTrimestre: number) {
+  if (!porTrimestre) return plano;
+  for (const t of plano.trimestres || []) {
+    const cs = t.conteudos || [];
+    const soma = cs.reduce((s: number, c: any) => s + (Number(c.aulas_estimadas) || 0), 0);
+    if (!cs.length || !soma) continue;
+    let acumulado = 0;
+    cs.forEach((c: any, i: number) => {
+      if (i === cs.length - 1) c.aulas_estimadas = Math.max(1, porTrimestre - acumulado);
+      else {
+        c.aulas_estimadas = Math.max(1, Math.round((Number(c.aulas_estimadas) || 0) * porTrimestre / soma));
+        acumulado += c.aulas_estimadas;
+      }
+    });
+  }
+  return plano;
+}
+
 // Mantém só os códigos que existem no catálogo do professor (a IA não pode criar códigos).
 function soCodigosValidos(plano: any, validos: Set<string>) {
   const filtrar = (lista: any) => (Array.isArray(lista) ? lista.filter((c) => validos.has(c)) : lista);
@@ -232,6 +251,12 @@ ${COMPETENCIAS_EIXO}
 HABILIDADES: para cada conteúdo, vincule no máximo 3 códigos do CATÁLOGO DE HABILIDADES, só os que tratam diretamente do objeto do conhecimento. Para ensino médio, use os códigos EM13CO e não use códigos EF (ensino fundamental). Use só códigos desse catálogo. Nas competências gerais e específicas, use os textos de eixo listados acima e o texto da BNCC quando houver.
 
 CARGA DE AULAS: são ${plano.aulas_semana ?? 'não informado'} aulas por semana e cerca de 12 semanas por trimestre. A soma de aulas_estimadas de cada trimestre deve ficar perto de ${(plano.aulas_semana ?? 0) * 12}.
+
+PREENCHIMENTO: preencha TODAS as seções acima, inclusive recomposição, projetos integradores, temas transversais, avaliação e referências. Em referencias, liste os materiais usados com autor, título e ano quando forem conhecidos (se não souber o autor, use só o título). Não invente autores. Se o material não trouxer o conteúdo de uma seção, proponha algo coerente com o curso e a disciplina, e registre em observacoes quais seções foram propostas por você.
+
+PROJETOS E AVALIAÇÃO DEFINIDOS PELO PROFESSOR
+${corpo.projetos ? `- Projetos que o professor quer desenvolver com a turma: ${corpo.projetos}. Adapte os conteúdos, tópicos e atividades para que esses projetos façam parte do ano: use-os em projetos integradores e nos conteúdos em que se encaixam.` : '- Nenhum tipo de projeto foi indicado. Proponha projetos integradores coerentes com o curso e registre isso em observacoes.'}
+${corpo.substituir_provas === 'todas' ? '- Substitua as provas pela aplicação do projeto: na avaliação de cada conteúdo, a prova escrita vira a entrega ou apresentação do projeto.' : corpo.substituir_provas === 'algumas' ? '- Substitua a prova por aplicação do projeto em algumas avaliações. Diga em avaliacao de cada conteúdo quais são essas avaliações.' : '- Mantenha as provas escritas. O projeto é complementar à avaliação.'}
 
 CONTEXTO
 - Colégio: ${plano.turmas?.colegios?.nome}
@@ -283,8 +308,8 @@ FORMATO DO JSON (todas as chaves; use lista vazia quando não houver o que coloc
   "observacoes": "resumo de como o ano foi distribuído e pontos de atenção"
 }`;
 
-  const saida = soCodigosValidos(await gemini(prompt), new Set(habilidades.map((h: any) => h.codigo)));
-  const planoGerado = { ...saida, cabecalho: {
+  const saida = ajustarCargaAulas(soCodigosValidos(await gemini(prompt), new Set(habilidades.map((h: any) => h.codigo))), (plano.aulas_semana ?? 0) * 12);
+  const planoGerado = { ...saida, professor: corpo.professor, cabecalho: {
     colegio: plano.turmas?.colegios?.nome, turma: plano.turmas?.nome, serie: plano.turmas?.serie,
     curso: plano.turmas?.cursos?.nome || plano.turmas?.curso, alunos: plano.turmas?.qtd_alunos, ano: plano.ano,
     disciplina: plano.disciplinas?.nome, aulas_semana: plano.aulas_semana

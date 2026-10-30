@@ -66,7 +66,7 @@ function montarPrompt(texto: string, ctx: { colegio: string; turma: string; disc
 
 REGRAS
 - Use SOMENTE o que está no texto do plano. Não invente conteúdos, competências ou bibliografia.
-- Se uma seção não existir no texto, deixe a lista vazia ou o texto em branco.
+- Preencha TODAS as seções do formato. Se o texto não trouxer uma seção (por exemplo, recomposição ou projetos integradores), proponha conteúdo coerente com o curso e a disciplina e registre em observacoes quais seções foram propostas por você.
 - Habilidades: o plano anterior pode não trazer códigos. Para cada conteúdo, vincule as habilidades do CATÁLOGO abaixo cujo texto corresponda ao objeto do conhecimento ou ao conteúdo: no máximo 3 códigos por conteúdo, só os que tratam diretamente do tema. Para ensino médio, use os códigos EM13CO. Não use códigos de anos do ensino fundamental (EF...) a não ser que o texto do plano os cite. Cite só códigos que estejam nesse catálogo. Se nenhum se aplicar, deixe a lista vazia.
 - Se o texto trouxer códigos, mantenha os que existem no catálogo.
 
@@ -118,6 +118,25 @@ FORMATO DO JSON (todas as chaves):
 
 TEXTO DO PLANO ANTERIOR:
 ${texto}`;
+}
+
+// Distribui as aulas de cada trimestre para o total pedido (aulas por semana × semanas), proporcionalmente.
+function ajustarCargaAulas(plano: any, porTrimestre: number) {
+  if (!porTrimestre) return plano;
+  for (const t of plano.trimestres || []) {
+    const cs = t.conteudos || [];
+    const soma = cs.reduce((s: number, c: any) => s + (Number(c.aulas_estimadas) || 0), 0);
+    if (!cs.length || !soma) continue;
+    let acumulado = 0;
+    cs.forEach((c: any, i: number) => {
+      if (i === cs.length - 1) c.aulas_estimadas = Math.max(1, porTrimestre - acumulado);
+      else {
+        c.aulas_estimadas = Math.max(1, Math.round((Number(c.aulas_estimadas) || 0) * porTrimestre / soma));
+        acumulado += c.aulas_estimadas;
+      }
+    });
+  }
+  return plano;
 }
 
 // Mantém só os códigos que existem no catálogo do professor (a IA não pode criar códigos).
@@ -181,13 +200,14 @@ Deno.serve(async (req) => {
       disciplina: disc.nome,
       ano
     }, listaCatalogo)), new Set(validos.keys()));
+    ajustarCargaAulas(saida, (Number(saida.identificacao?.aulas_semanais) || 0) * 12);
 
     const { count } = await db.from('planos_anuais').select('id', { count: 'exact', head: true })
       .eq('turma_id', turma_id).eq('disciplina_id', disciplina_id).eq('ano', ano);
 
     const entrada = (saida.trimestres || []).flatMap((t: any) =>
       (t.conteudos || []).map((c: any) => ({ titulo: c.titulo, trimestre: t.numero, status: 'novo' })));
-    const plano = { ...saida, cabecalho: {
+    const plano = { ...saida, professor: user.user_metadata?.full_name || user.email, cabecalho: {
       colegio: turma.colegios?.nome, turma: turma.nome, serie: turma.serie, curso: turma.cursos?.nome,
       alunos: turma.qtd_alunos, ano, disciplina: disc.nome
     } };

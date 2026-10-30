@@ -139,7 +139,8 @@ function renderPlanoAnual(plano) {
     ${(av.instrumentos || []).length ? `<div class="rotulo-secao">Instrumentos</div>${lista(av.instrumentos)}` : ''}
     ${(av.criterios || []).length ? `<div class="rotulo-secao">Critérios</div>${lista(av.criterios)}` : ''}`) : '';
   const referencias = secao('XI. Referências', lista(plano.referencias));
-  return identificacao + competencias + trimestres + recomposicao + projetos + transversais + avaliacao + referencias
+  const professor = plano.professor ? secao('II. Professor responsável', `<p>${esc(plano.professor)}</p>`) : '';
+  return identificacao + professor + competencias + trimestres + recomposicao + projetos + transversais + avaliacao + referencias
     + (plano.observacoes ? `<div class="aviso verde">${esc(plano.observacoes)}</div>` : '');
 }
 
@@ -229,9 +230,22 @@ async function abaAnual(area) {
 // Antes de gerar, o professor escolhe os materiais que a IA pode consultar e escreve observações.
 async function abrirGerarAnual(plano, area) {
   const seletor = await seletorMateriais({ disciplina: plano.disciplinas?.nome });
+  const perguntas = el(`<div class="card" style="box-shadow:none;border:1px solid var(--borda);margin-bottom:16px">
+    <h3 style="margin-bottom:6px">Projetos e avaliação</h3>
+    <label class="campo"><span>Que tipos de projeto você quer desenvolver com a turma?</span>
+      <textarea id="gen-projetos" placeholder="Ex.: sistema de gestão de estoque para a loja da escola; aplicativo de cadastro; jogo com lógica de programação"></textarea></label>
+    <label class="campo" style="margin-top:12px"><span>Você quer trocar provas pela aplicação desses projetos?</span>
+      <select id="gen-provas">
+        <option value="nao">Não, manter as provas escritas</option>
+        <option value="todas">Sim, em todas as avaliações</option>
+        <option value="algumas">Sim, só em algumas (descreva em observações)</option>
+      </select></label>
+  </div>`);
+  const conteudo = el('<div></div>');
+  conteudo.append(perguntas, seletor.el);
   abrirModal({
     titulo: `Gerar plano anual · ${plano.disciplinas?.nome}`,
-    conteudo: seletor.el,
+    conteudo,
     grande: true,
     submitLabel: 'Gerar com IA',
     onSubmit: async (fechar) => {
@@ -239,7 +253,9 @@ async function abrirGerarAnual(plano, area) {
       if (!fonte_ids.length) throw new Error('Marque ao menos um material na Base para a IA antes de gerar.');
       fechar();
       toast('Gerando o plano anual com IA. Isso pode levar alguns segundos...', '');
-      await invocarIA({ tipo: 'anual', plano_id: plano.id, fonte_ids, observacoes });
+      const projetos = perguntas.querySelector('#gen-projetos').value.trim();
+      const substituir_provas = perguntas.querySelector('#gen-provas').value;
+      await invocarIA({ tipo: 'anual', plano_id: plano.id, fonte_ids, observacoes, projetos, substituir_provas });
       toast('Plano anual gerado.', 'ok');
       abaAnual(area);
     }
