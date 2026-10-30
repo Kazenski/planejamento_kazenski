@@ -1,4 +1,4 @@
-﻿import { supabase } from './supabase.js';
+import { supabase } from './supabase.js';
 import { listar, inserir, atualizar, excluir, getConfig } from './db.js';
 import { esc, el, abrirModal, fecharModal, formulario, toast, mostrarErro, carregando, tagStatus, lista } from './ui.js';
 import { MESES, MESES_PLANEJAMENTO, SERIES, DIAS_LETIVOS_PADRAO, STATUS_PLANO, DIAS_SEMANA } from './config.js';
@@ -232,6 +232,7 @@ async function abrirGerarAnual(plano, area) {
     submitLabel: 'Gerar com IA',
     onSubmit: async (fechar) => {
       const { fonte_ids, observacoes } = seletor.ler();
+      if (!fonte_ids.length) throw new Error('Marque ao menos um material na Base para a IA antes de gerar.');
       fechar();
       toast('Gerando o plano anual com IA. Isso pode levar alguns segundos...', '');
       await invocarIA({ tipo: 'anual', plano_id: plano.id, fonte_ids, observacoes });
@@ -456,6 +457,7 @@ async function abaMensal(area) {
       resultado.querySelectorAll('tr[data-item]').forEach((tr) => { acoes[tr.dataset.item] = tr.querySelector('[data-acao]').value; });
       const extras = resultado.querySelector('#m-extras').value.split('\n').map((s) => s.trim()).filter(Boolean);
       const { fonte_ids, observacoes } = seletor.ler();
+      if (!fonte_ids.length) throw new Error('Marque ao menos um material na Base para a IA antes de gerar.');
       toast('Gerando o plano mensal com IA...', '');
       try {
         const resp = await invocarIA({ tipo: 'mensal', plano_anual_id: anual.id, mes, ajustes: { itens: acoes, extras }, fonte_ids, observacoes });
@@ -619,6 +621,7 @@ async function carregarDiario(area, mensal) {
     toast('Gerando os planos diários com IA...', '');
     try {
       const { fonte_ids, observacoes } = seletor.ler();
+      if (!fonte_ids.length) throw new Error('Marque ao menos um material na Base para a IA antes de gerar.');
       await invocarIA({
         tipo: 'diario',
         plano_mensal_id: mensal.id,
