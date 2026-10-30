@@ -370,6 +370,7 @@ export async function telaMinhasAulas(main) {
   }
 
   main.onchange = async (e) => {
+    if (!main.querySelector('#ma-colegio')) return;
     const alvo = e.target;
     if (alvo.id === 'ma-colegio') {
       estado.colegioId = alvo.value;
@@ -391,6 +392,7 @@ export async function telaMinhasAulas(main) {
   };
 
   main.onclick = async (e) => {
+    if (!main.querySelector('#ma-colegio')) return;
     const botaoHora = e.target.closest('.aula-hora');
     if (botaoHora) {
       const card = horariosVisiveis().find((h) => h.id === botaoHora.dataset.hora);

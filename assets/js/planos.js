@@ -83,7 +83,19 @@ function renderPlanoAnual(plano) {
   if (!plano || !plano.trimestres) {
     return '<div class="aviso azul">Este plano ainda não tem conteúdo gerado. Clique em "Gerar com IA" ou em "Editar conteúdos" para começar.</div>';
   }
-  return plano.trimestres.map((t) => `
+  const lista = (itens) => ((itens || []).length ? `<ul>${itens.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '');
+  const tags = (itens) => (itens || []).map((h) => `<span class="tag azul" style="margin:2px">${esc(h)}</span>`).join(' ');
+  const secao = (titulo, corpo) => (corpo ? `<section class="card" style="margin-bottom:14px"><h3>${titulo}</h3>${corpo}</section>` : '');
+  const id = plano.identificacao;
+  const identificacao = id ? secao('I. Identificação da disciplina', `
+    <table class="tabela"><tbody>
+      <tr><td>Série/ano</td><td>${esc(id.serie_ano || '')}</td><td>Componente</td><td>${esc(id.componente || '')}</td></tr>
+      <tr><td>Aulas semanais</td><td>${esc(id.aulas_semanais || '')}</td><td>Turma(s)</td><td>${esc(id.turmas || '')}</td></tr>
+      <tr><td>Ano letivo</td><td colspan="3">${esc(id.ano_letivo || '')}</td></tr>
+    </tbody></table>`) : '';
+  const competencias = secao('III. Competências gerais', lista(plano.competencias_gerais))
+    + secao('Competências específicas', lista(plano.competencias_especificas));
+  const trimestres = plano.trimestres.map((t) => `
     <div class="plano-trimestre">
       <header>${esc(t.numero)}º trimestre · ${esc(t.titulo || '')}</header>
       <div>
@@ -91,15 +103,44 @@ function renderPlanoAnual(plano) {
         ${(t.conteudos || []).map((c) => `
           <div class="plano-conteudo">
             <h4>${esc(c.titulo)}</h4>
+            ${c.unidade_tematica ? `<p><strong>Unidade temática:</strong> ${esc(c.unidade_tematica)}</p>` : ''}
             ${c.descricao ? `<p>${esc(c.descricao)}</p>` : ''}
-            ${(c.topicos || []).length ? `<div class="rotulo-secao">Tópicos</div><ul>${c.topicos.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-            ${(c.habilidades || []).length ? `<div class="rotulo-secao">Habilidades</div><div>${c.habilidades.map((h) => `<span class="tag azul" style="margin:2px">${esc(h)}</span>`).join(' ')}</div>` : ''}
-            ${(c.materiais || []).length ? `<div class="rotulo-secao">Materiais de apoio</div><ul>${c.materiais.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}
+            ${(c.objeto_conhecimento || []).length ? `<div class="rotulo-secao">Objeto do conhecimento</div>${lista(c.objeto_conhecimento)}` : ''}
+            ${(c.topicos || []).length ? `<div class="rotulo-secao">Tópicos</div>${lista(c.topicos)}` : ''}
+            ${(c.habilidades || []).length ? `<div class="rotulo-secao">Habilidades</div><div>${tags(c.habilidades)}</div>` : ''}
+            ${c.metodologia ? `<div class="rotulo-secao">Metodologia/estratégia</div><p>${esc(c.metodologia)}</p>` : ''}
+            ${(c.materiais || []).length ? `<div class="rotulo-secao">Materiais de apoio</div>${lista(c.materiais)}` : ''}
             ${c.avaliacao ? `<div class="rotulo-secao">Avaliação</div><p>${esc(c.avaliacao)}</p>` : ''}
             ${c.aulas_estimadas ? `<p class="small muted">Aulas estimadas: ${esc(c.aulas_estimadas)}</p>` : ''}
           </div>`).join('')}
       </div>
-    </div>`).join('') + (plano.observacoes ? `<div class="aviso verde">${esc(plano.observacoes)}</div>` : '');
+    </div>`).join('');
+  const rec = plano.recomposicao;
+  const recomposicao = rec ? secao('VII. Recomposição das aprendizagens', `
+    ${rec.unidade_tematica ? `<p><strong>Unidade temática:</strong> ${esc(rec.unidade_tematica)}</p>` : ''}
+    ${lista(rec.objeto_conhecimento)}
+    ${(rec.habilidades || []).length ? `<div>${tags(rec.habilidades)}</div>` : ''}
+    ${rec.metodologia ? `<p>${esc(rec.metodologia)}</p>` : ''}`) : '';
+  const pi = plano.projetos_integradores;
+  const projetos = pi ? secao('VIII. Projetos integradores', `
+    ${pi.temas ? `<p><strong>Temas:</strong> ${esc(pi.temas)}</p>` : ''}
+    ${pi.tema_especifico ? `<p><strong>Tema específico:</strong> ${esc(pi.tema_especifico)}</p>` : ''}
+    ${(pi.habilidades_macroarea || []).length ? `<div>${tags(pi.habilidades_macroarea)}</div>` : ''}
+    ${pi.metodologia ? `<p>${esc(pi.metodologia)}</p>` : ''}
+    ${lista(pi.atividades)}`) : '';
+  const tt = plano.temas_transversais;
+  const transversais = tt ? secao('IX. Temas curriculares transversais', `
+    ${(tt.competencias_gerais || []).length ? `<div class="rotulo-secao">Competências gerais</div>${lista(tt.competencias_gerais)}` : ''}
+    ${(tt.competencias_especificas || []).length ? `<div class="rotulo-secao">Competências específicas</div>${lista(tt.competencias_especificas)}` : ''}
+    ${(tt.habilidades_macroarea || []).length ? `<div>${tags(tt.habilidades_macroarea)}</div>` : ''}
+    ${tt.metodologia ? `<p>${esc(tt.metodologia)}</p>` : ''}`) : '';
+  const av = plano.avaliacao;
+  const avaliacao = av ? secao('X. Avaliações e critérios avaliativos', `
+    ${(av.instrumentos || []).length ? `<div class="rotulo-secao">Instrumentos</div>${lista(av.instrumentos)}` : ''}
+    ${(av.criterios || []).length ? `<div class="rotulo-secao">Critérios</div>${lista(av.criterios)}` : ''}`) : '';
+  const referencias = secao('XI. Referências', lista(plano.referencias));
+  return identificacao + competencias + trimestres + recomposicao + projetos + transversais + avaliacao + referencias
+    + (plano.observacoes ? `<div class="aviso verde">${esc(plano.observacoes)}</div>` : '');
 }
 
 // ---------- Tela ----------

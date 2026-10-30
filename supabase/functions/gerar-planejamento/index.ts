@@ -95,7 +95,7 @@ async function gemini(prompt: string): Promise<any> {
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.4 }
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.4, maxOutputTokens: 16384 }
     })
   });
   if (!resp.ok) throw new Error(`A IA respondeu com erro ${resp.status}. Tente novamente em instantes.`);
@@ -167,6 +167,44 @@ async function carregarAnual(db: any, planoId: string) {
   return { ...data, aulas_semana: vinc?.aulas_semana ?? null };
 }
 
+// Modelo genérico de planejamento anual do colégio (Modelo de Planejamento Anual - Disciplina). Base obrigatória do plano anual.
+const MODELO_SECOES = `SEÇÕES OBRIGATÓRIAS DO MODELO (preencha todas, nesta ordem):
+I. Identificação da disciplina: série/ano, componente curricular, nº de aulas semanais, turma(s), ano letivo.
+II. Professor responsável.
+III. Competências gerais do componente curricular.
+IV. Organização dos conteúdos do 1º trimestre: unidade temática, objeto do conhecimento, habilidades (códigos do catálogo), metodologia/estratégia.
+V. Organização dos conteúdos do 2º trimestre: mesmas colunas.
+VI. Organização dos conteúdos do 3º trimestre: mesmas colunas.
+VII. Recomposição das aprendizagens: unidade temática, objeto do conhecimento, habilidades, metodologia/estratégia.
+VIII. Projetos integradores: temas, tema específico, habilidades da macroárea, metodologia/estratégia, atividades desenvolvidas no projeto.
+IX. Temas curriculares transversais: competências gerais, competências específicas, habilidades da macroárea, metodologia/estratégia.
+X. Avaliações e critérios avaliativos: instrumentos de avaliação e critérios de correção.
+XI. Referências: bibliografias que serão usadas ao longo do ano.`;
+
+// Competências de eixo fixas do colégio (do plano de referência). Copie o texto exato quando se aplicar à disciplina.
+const COMPETENCIAS_EIXO = `COMPETÊNCIAS DE EIXO FIXO DO COLÉGIO (use as que se aplicam à disciplina, com o texto exato):
+CULTURA DIGITAL
+- CDEM01: Propor ações criativas que contribuam para a transformação da sociedade, analisando e utilizando as tecnologias de forma crítica, considerando os diferentes tipos de mídia e as relações humanas mediadas por elas.
+- CDEM02: Analisar a relação tecnologia e sociedade, avaliando suas potencialidades e riscos, considerando a ética, a sustentabilidade e o empreendedorismo, a fim de atuar no mundo de forma responsável.
+- CDEMAD01: Produzir conhecimento e conteúdo com base nos multiletramentos, por meio de sinais verbais e não verbais, códigos, a fim de utilizar os recursos digitais e a internet em seu cotidiano.
+- CDEMSD01: Identificar e aplicar técnicas de proteção e segurança digital de informações, principalmente relacionadas ao uso da internet.
+- CDEMAT01: Analisar a relação homem-máquina, considerando a dimensão social, política, econômica e ambiental.
+- CDEMLM01: Utilizar diferentes mídias para a comunicação, agindo de forma crítica e ética na produção e consumo de informação.
+- CDEMET01: Desenvolver soluções inovadoras utilizando tecnologias para resolver problemas.
+- CDEMDE01: Criar materiais gráficos utilizando diferentes softwares de diagramação e editoração no desenvolvimento de projetos.
+TECNOLOGIA DIGITAL
+- TDEM01: Compreender as bases das tecnologias digitais atuais, como hardware, software, redes e representação de dados, refletindo sobre as tendências tecnológicas e seus impactos na sociedade.
+- TDEM02: Utilizar de forma segura, propositiva e intencional as ferramentas tecnológicas digitais para se expressar em ambientes físicos ou digitais.
+- TDEMTT01: Analisar a relação entre tecnologia e o trabalho no século XXI, considerando impactos e transformações sociais, econômicas e políticas.
+- TDEMCC01: Analisar a segurança digital de dados e suas aplicações e implicações na privacidade, proteção de dados pessoais e segurança digital.
+- TDEMIA01: Criar e utilizar aplicações de Inteligência Artificial e suas tecnologias subjacentes, refletindo sobre os impactos sociais, culturais e ambientais desta tecnologia em cenários de utilização.
+PENSAMENTO COMPUTACIONAL
+- PCEM01: Representar problemas complexos na forma de problemas menores, reconhecendo os seus detalhes relevantes e projetar soluções na forma de sequências de passos simples, coerentes e não ambíguos capazes de serem executados por computadores.
+- PCEM02: Analisar os dados relevantes de um problema e representá-los em formatos que possam ser inseridos em um computador para serem posteriormente analisados, manipulados e visualizados de modo a se extrair informações, conhecimentos e conclusões.
+- PCEM03: Compreender os processos e tecnologias envolvidas no desenvolvimento de programas para computadores, incluindo computadores pessoais, dispositivos móveis e aplicações na Web, a fim de utilizar estas soluções tecnológicas de maneira segura e responsável, avaliando seus riscos e benefícios.
+- PCEMPC01: Resolver problemas por meio do desenvolvimento de algoritmos e implementá-los em linguagens de programação textual.
+- PCEMCD01: Coletar, organizar, visualizar e interpretar conjuntos de dados para extração de informações, conhecimentos, criações de previsões que apoiem a tomada de decisão.`;
+
 async function gerarAnual(db: any, userId: string, planoId: string, habilidades: any[], materiais: any[], corpo: any) {
   const plano = await carregarAnual(db, planoId);
   const entrada = (plano.conteudo?.entrada?.conteudos || []).filter((c: any) => c.status !== 'removido');
@@ -175,7 +213,13 @@ async function gerarAnual(db: any, userId: string, planoId: string, habilidades:
   const extra = await materiaisParaPrompt(db, corpo, entrada.map((c: any) => `${c.titulo}${c.observacao ? ': ' + c.observacao : ''}`).join('\n'), plano.turmas?.curso_id);
   const prompt = `${REGRAS_BASE}
 
-TAREFA: criar o PLANO ANUAL detalhado da disciplina, para um professor adaptar ao documento do colégio.
+TAREFA: criar o PLANO ANUAL detalhado da disciplina, no formato do modelo de planejamento do colégio. Use o modelo como base obrigatória.
+
+${MODELO_SECOES}
+
+${COMPETENCIAS_EIXO}
+
+CARGA DE AULAS: são ${plano.aulas_semana ?? 'não informado'} aulas por semana e cerca de 12 semanas por trimestre. A soma de aulas_estimadas de cada trimestre deve ficar perto de ${(plano.aulas_semana ?? 0) * 12}.
 
 CONTEXTO
 - Colégio: ${plano.turmas?.colegios?.nome}
@@ -193,8 +237,11 @@ ${entrada.map((c: any) => `- [${c.trimestre}º trimestre] ${c.titulo}${c.observa
 ${extra}CATÁLOGO DE HABILIDADES (código: descrição)
 ${listaHabilidades(habilidades)}
 
-FORMATO DO JSON:
+FORMATO DO JSON (todas as chaves; use lista vazia quando não houver o que colocar):
 {
+  "identificacao": { "serie_ano": "...", "componente": "...", "aulas_semanais": 3, "turmas": "...", "ano_letivo": 2026 },
+  "competencias_gerais": ["competência do componente, com o texto de eixo quando se aplicar"],
+  "competencias_especificas": ["competência específica da disciplina"],
   "trimestres": [
     {
       "numero": 1,
@@ -203,9 +250,12 @@ FORMATO DO JSON:
       "conteudos": [
         {
           "titulo": "...",
+          "unidade_tematica": "...",
+          "objeto_conhecimento": ["objeto do conhecimento"],
           "descricao": "...",
           "topicos": ["tópicos detalhados, prontos para o professor adaptar"],
           "habilidades": ["código do catálogo"],
+          "metodologia": "metodologia/estratégia da aula",
           "materiais": ["material de apoio ou referência"],
           "avaliacao": "forma de avaliação sugerida",
           "aulas_estimadas": 4
@@ -213,13 +263,18 @@ FORMATO DO JSON:
       ]
     }
   ],
+  "recomposicao": { "unidade_tematica": "...", "objeto_conhecimento": ["..."], "habilidades": ["código do catálogo"], "metodologia": "..." },
+  "projetos_integradores": { "temas": "...", "tema_especifico": "...", "habilidades_macroarea": ["código do catálogo"], "metodologia": "...", "atividades": ["..."] },
+  "temas_transversais": { "competencias_gerais": ["..."], "competencias_especificas": ["..."], "habilidades_macroarea": ["código do catálogo"], "metodologia": "..." },
+  "avaliacao": { "instrumentos": ["..."], "criterios": ["..."] },
+  "referencias": ["bibliografia usada ao longo do ano"],
   "observacoes": "resumo de como o ano foi distribuído e pontos de atenção"
 }`;
 
   const saida = await gemini(prompt);
   const planoGerado = { ...saida, cabecalho: {
     colegio: plano.turmas?.colegios?.nome, turma: plano.turmas?.nome, serie: plano.turmas?.serie,
-    curso: plano.turmas?.curso, alunos: plano.turmas?.qtd_alunos, ano: plano.ano,
+    curso: plano.turmas?.cursos?.nome || plano.turmas?.curso, alunos: plano.turmas?.qtd_alunos, ano: plano.ano,
     disciplina: plano.disciplinas?.nome, aulas_semana: plano.aulas_semana
   } };
 
