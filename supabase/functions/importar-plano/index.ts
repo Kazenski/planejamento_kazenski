@@ -48,7 +48,7 @@ async function gemini(prompt: string): Promise<any> {
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.2, maxOutputTokens: 16384 }
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.2, maxOutputTokens: 32768 }
     })
   });
   if (!resp.ok) throw new Error(`A IA respondeu com erro ${resp.status}. Tente novamente em instantes.`);
@@ -61,13 +61,17 @@ async function gemini(prompt: string): Promise<any> {
   }
 }
 
-function montarPrompt(texto: string, ctx: { colegio: string; turma: string; disciplina: string; ano: number }) {
+function montarPrompt(texto: string, ctx: { colegio: string; turma: string; disciplina: string; ano: number }, catalogo: string) {
   return `Você converte um PLANO DE ENSINO ANUAL escrito pelo professor para o formato de plano anual do sistema.
 
 REGRAS
-- Use SOMENTE o que está no texto do plano. Não invente conteúdos, códigos de habilidade, competências ou bibliografia.
+- Use SOMENTE o que está no texto do plano. Não invente conteúdos, competências ou bibliografia.
 - Se uma seção não existir no texto, deixe a lista vazia ou o texto em branco.
-- Mantenha os códigos de habilidade e de competência exatamente como aparecem no texto.
+- Habilidades: o plano anterior pode não trazer códigos. Para cada conteúdo, vincule as habilidades do CATÁLOGO abaixo cujo texto corresponda ao objeto do conhecimento ou ao conteúdo: no máximo 3 códigos por conteúdo, só os que tratam diretamente do tema. Para ensino médio, use os códigos EM13CO. Não use códigos de anos do ensino fundamental (EF...) a não ser que o texto do plano os cite. Cite só códigos que estejam nesse catálogo. Se nenhum se aplicar, deixe a lista vazia.
+- Se o texto trouxer códigos, mantenha os que existem no catálogo.
+
+CATÁLOGO DE HABILIDADES (código: descrição)
+${catalogo}
 - Em cada conteúdo, separe a unidade temática, os objetos do conhecimento, as habilidades e a metodologia, quando o texto trouxer essas informações.
 - aulas_estimadas: use a quantidade informada no texto. Se não houver, estime pela carga semanal dividida pelos trimestres (cerca de 12 semanas por trimestre).
 - Escreva em português do Brasil e responda SOMENTE com JSON válido.
@@ -116,6 +120,25 @@ TEXTO DO PLANO ANTERIOR:
 ${texto}`;
 }
 
+// Mantém só os códigos que existem no catálogo do professor (a IA não pode criar códigos).
+function soCodigosValidos(plano: any, validos: Set<string>) {
+  const filtrar = (lista: any) => (Array.isArray(lista) ? lista.filter((c) => validos.has(c)) : lista);
+  for (const t of plano.trimestres || []) for (const c of t.conteudos || []) c.habilidades = filtrar(c.habilidades)?.slice(0, 3);
+  if (plano.recomposicao) plano.recomposicao.habilidades = filtrar(plano.recomposicao.habilidades);
+  if (plano.projetos_integradores) plano.projetos_integradores.habilidades_macroarea = filtrar(plano.projetos_integradores.habilidades_macroarea);
+  if (plano.temas_transversais) plano.temas_transversais.habilidades_macroarea = filtrar(plano.temas_transversais.habilidades_macroarea);
+  return plano;
+}
+
+function todosCodigos(plano: any): string[] {
+  const out: string[] = [];
+  for (const t of plano.trimestres || []) for (const c of t.conteudos || []) out.push(...(c.habilidades || []));
+  out.push(...(plano.recomposicao?.habilidades || []));
+  out.push(...(plano.projetos_integradores?.habilidades_macroarea || []));
+  out.push(...(plano.temas_transversais?.habilidades_macroarea || []));
+  return out;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ erro: 'Método não permitido.' }, 405);
@@ -147,12 +170,17 @@ Deno.serve(async (req) => {
     const { data: disc } = await db.from('disciplinas').select('nome').eq('id', disciplina_id).single();
     if (!turma || !disc) return json({ erro: 'Turma ou disciplina não encontrada.' }, 404);
 
-    const saida = await gemini(montarPrompt(texto, {
+    const { data: catalogo } = await db.from('habilidades').select('id, codigo, descricao').order('codigo');
+    const habs: any[] = catalogo || [];
+    const validos = new Map(habs.map((h) => [h.codigo, h.id]));
+    const listaCatalogo = habs.length ? habs.map((h) => `${h.codigo}: ${h.descricao || ''}`).join('\n') : '(catálogo de habilidades ainda não cadastrado)';
+
+    const saida = soCodigosValidos(await gemini(montarPrompt(texto, {
       colegio: turma.colegios?.nome || 'não informado',
       turma: turma.nome,
       disciplina: disc.nome,
       ano
-    }));
+    }, listaCatalogo)), new Set(validos.keys()));
 
     const { count } = await db.from('planos_anuais').select('id', { count: 'exact', head: true })
       .eq('turma_id', turma_id).eq('disciplina_id', disciplina_id).eq('ano', ano);
@@ -174,6 +202,12 @@ Deno.serve(async (req) => {
       atualizado_em: new Date().toISOString()
     }).select('id').single();
     if (erroIns) return json({ erro: erroIns.message }, 500);
+
+    const codigos = [...new Set(todosCodigos(saida))];
+    const ids = codigos.map((c) => validos.get(c)).filter(Boolean);
+    if (ids.length) {
+      await db.from('planos_anuais_habilidades').insert(ids.map((habilidade_id) => ({ user_id: user.id, plano_anual_id: novo.id, habilidade_id })));
+    }
 
     return json({ ok: true, plano_id: novo.id });
   } catch (err) {

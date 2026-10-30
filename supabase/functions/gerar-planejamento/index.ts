@@ -95,7 +95,7 @@ async function gemini(prompt: string): Promise<any> {
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.4, maxOutputTokens: 16384 }
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.4, maxOutputTokens: 32768 }
     })
   });
   if (!resp.ok) throw new Error(`A IA respondeu com erro ${resp.status}. Tente novamente em instantes.`);
@@ -205,6 +205,16 @@ PENSAMENTO COMPUTACIONAL
 - PCEMPC01: Resolver problemas por meio do desenvolvimento de algoritmos e implementá-los em linguagens de programação textual.
 - PCEMCD01: Coletar, organizar, visualizar e interpretar conjuntos de dados para extração de informações, conhecimentos, criações de previsões que apoiem a tomada de decisão.`;
 
+// Mantém só os códigos que existem no catálogo do professor (a IA não pode criar códigos).
+function soCodigosValidos(plano: any, validos: Set<string>) {
+  const filtrar = (lista: any) => (Array.isArray(lista) ? lista.filter((c) => validos.has(c)) : lista);
+  for (const t of plano.trimestres || []) for (const c of t.conteudos || []) c.habilidades = filtrar(c.habilidades)?.slice(0, 3);
+  if (plano.recomposicao) plano.recomposicao.habilidades = filtrar(plano.recomposicao.habilidades);
+  if (plano.projetos_integradores) plano.projetos_integradores.habilidades_macroarea = filtrar(plano.projetos_integradores.habilidades_macroarea);
+  if (plano.temas_transversais) plano.temas_transversais.habilidades_macroarea = filtrar(plano.temas_transversais.habilidades_macroarea);
+  return plano;
+}
+
 async function gerarAnual(db: any, userId: string, planoId: string, habilidades: any[], materiais: any[], corpo: any) {
   const plano = await carregarAnual(db, planoId);
   const entrada = (plano.conteudo?.entrada?.conteudos || []).filter((c: any) => c.status !== 'removido');
@@ -218,6 +228,8 @@ TAREFA: criar o PLANO ANUAL detalhado da disciplina, no formato do modelo de pla
 ${MODELO_SECOES}
 
 ${COMPETENCIAS_EIXO}
+
+HABILIDADES: para cada conteúdo, vincule no máximo 3 códigos do CATÁLOGO DE HABILIDADES, só os que tratam diretamente do objeto do conhecimento. Para ensino médio, use os códigos EM13CO e não use códigos EF (ensino fundamental). Use só códigos desse catálogo. Nas competências gerais e específicas, use os textos de eixo listados acima e o texto da BNCC quando houver.
 
 CARGA DE AULAS: são ${plano.aulas_semana ?? 'não informado'} aulas por semana e cerca de 12 semanas por trimestre. A soma de aulas_estimadas de cada trimestre deve ficar perto de ${(plano.aulas_semana ?? 0) * 12}.
 
@@ -271,7 +283,7 @@ FORMATO DO JSON (todas as chaves; use lista vazia quando não houver o que coloc
   "observacoes": "resumo de como o ano foi distribuído e pontos de atenção"
 }`;
 
-  const saida = await gemini(prompt);
+  const saida = soCodigosValidos(await gemini(prompt), new Set(habilidades.map((h: any) => h.codigo)));
   const planoGerado = { ...saida, cabecalho: {
     colegio: plano.turmas?.colegios?.nome, turma: plano.turmas?.nome, serie: plano.turmas?.serie,
     curso: plano.turmas?.cursos?.nome || plano.turmas?.curso, alunos: plano.turmas?.qtd_alunos, ano: plano.ano,
