@@ -241,9 +241,9 @@ async function abrirGerarAnual(plano, area) {
         <option value="algumas">Sim, só em algumas (descreva em observações)</option>
       </select></label>
   </div>`);
-  const projetoBloco = el(`<div class="card" style="box-shadow:none;border:1px solid var(--borda);margin-bottom:16px">
-    <h3 style="margin-bottom:6px">Projeto/dinâmica para este ano</h3>
-    <p class="small muted" style="margin-top:-4px;margin-bottom:12px">Descreva a ideia que quer colocar em prática com a turma. A IA vai tentar encaixar no plano e, se autorizado, redistribuir aulas entre conteúdo e aplicação.</p>
+  const projetoBloco = el(`<div class="card" style="box-shadow:none;border:1px solid var(--borda);margin-bottom:16px;background:linear-gradient(180deg,#fff7f2 0%,#fff 100%)">
+    <h3 style="margin-bottom:6px">Projeto ou atividade prática (opcional)</h3>
+    <p class="small muted" style="margin-top:-4px;margin-bottom:12px">Coloque aqui a ideia que quer fazer com a turma. A IA vai encaixar no plano anual e, se você autorizar, redistribuir as aulas entre conteúdos e aplicação do projeto.</p>
     <label class="campo"><span>Título ou ideia do projeto/dinâmica</span>
       <textarea id="gen-projeto-ideia" placeholder="Ex.: Criar um site para a feira de ciências com cadastro de visitantes"></textarea></label>
     <label class="campo" style="margin-top:12px"><span>Colar detalhes, etapas ou rascunho</span>
@@ -436,7 +436,11 @@ async function abrirNovoAnual(planos) {
   const bloco = el('<div class="separador"></div>');
   const titulo = el('<h3 style="margin-bottom:8px">Conteúdos do ano</h3>');
   const dica = el('<p class="small muted">Marque a situação de cada conteúdo. "Novo" entra no plano. "Mantido" continua. "Alterado" recebe a observação. "Removido" sai do plano.</p>');
-  area.append(bloco, titulo, dica, editor.el);
+  const dicaProjeto = el(`<div class="aviso" style="margin-top:16px">
+    <strong>Projeto, dinâmica ou atividade prática</strong><br>
+    <span class="small">Após criar este rascunho, volte na lista e clique em <strong>Gerar com IA</strong> nesse plano. Lá vai aparecer o bloco <strong>"Projeto ou atividade prática (opcional)"</strong>, onde você descreve a ideia, anexa um arquivo e escolhe se quer reservar aulas ou redistribuir conteúdos para esse projeto.</span>
+  </div>`);
+  area.append(bloco, titulo, dica, editor.el, dicaProjeto);
 
   selOrigem.addEventListener('change', () => {
     const origem = planos.find((p) => p.id === selOrigem.value);
