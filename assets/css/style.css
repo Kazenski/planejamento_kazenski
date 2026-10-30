@@ -140,7 +140,11 @@ a { color: var(--azul); text-decoration: none; }
 .campo.linha { grid-template-columns: auto 1fr; align-items: center; gap: 8px; }
 .campo.linha input { width: 18px; height: 18px; accent-color: var(--laranja); }
 .campo .ajuda { font-size: 12px; font-weight: 400; color: var(--cinza); }
-.campos-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+.campos-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.campos-grid > .campo { align-content: start; }
+.campos-grid .campo > span:first-child { min-height: 18px; line-height: 18px; }
+.campos-grid .campo input:not([type=checkbox]), .campos-grid .campo select, .campos-grid .campo textarea { width: 100%; box-sizing: border-box; }
+.campos-grid .campo.linha { grid-template-columns: 18px 1fr; min-height: 40px; align-items: center; }
 .campos-grid .largo { grid-column: 1 / -1; }
 .checks { display: flex; flex-wrap: wrap; gap: 8px; }
 .checks label { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--borda); border-radius: 999px; padding: 5px 10px; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--branco); }
@@ -165,6 +169,26 @@ dialog.grande { width: min(1000px, calc(100vw - 32px)); }
 .cal-nav { display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 .cal-nav .mes-titulo { font-size: 20px; font-weight: 800; color: var(--marinho); min-width: 260px; text-align: center; text-transform: capitalize; }
 .cal-topo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+
+/* Minhas aulas */
+.ma-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
+.ma-turma { border: 1px solid var(--borda); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+.ma-disc { display: flex; gap: 8px; align-items: center; padding: 4px 0; font-size: 14px; cursor: pointer; }
+.ma-disc input { accent-color: var(--laranja); width: 16px; height: 16px; }
+.ma-bandeja { min-height: 52px; border: 2px dashed var(--borda); border-radius: 12px; padding: 8px; margin-bottom: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ma-bandeja.drop-over { border-color: var(--laranja); background: var(--laranja-suave); }
+.ma-grade { display: grid; grid-template-columns: 96px repeat(5, minmax(0, 1fr)); gap: 6px; }
+.ma-cab { font-weight: 800; color: var(--marinho); text-align: center; font-size: 13px; padding: 6px 0; }
+.ma-rotulo { font-size: 12px; color: var(--cinza); font-weight: 700; display: flex; align-items: center; }
+.ma-recreio { grid-column: 1 / -1; text-align: center; font-size: 12px; font-weight: 700; color: #B45309; background: #FFF7E6; border-radius: 8px; padding: 4px; letter-spacing: .05em; text-transform: uppercase; }
+.ma-celula { min-height: 78px; background: #FAFBFC; border: 1px dashed var(--borda); border-radius: 10px; padding: 4px; display: flex; flex-direction: column; gap: 4px; }
+.ma-celula.drop-over { border-color: var(--laranja); background: var(--laranja-suave); }
+.ma-celula.conflito { border: 2px solid var(--perigo); }
+.aula { background: var(--branco); border: 1px solid var(--borda); border-left: 5px solid var(--laranja); border-radius: 8px; padding: 5px 7px; font-size: 12px; cursor: grab; box-shadow: 0 1px 2px rgba(0,26,46,.08); }
+.aula strong { color: var(--marinho); display: block; line-height: 1.25; }
+.aula.off { background: #E5E7EB; border-color: #D1D5DB; border-left-color: #9CA3AF !important; color: #6B7280; cursor: not-allowed; filter: grayscale(1); }
+.aula.off strong { color: #6B7280; }
+@media (max-width: 1000px) { .ma-layout { grid-template-columns: 1fr; } }
 .kpi.laranja::before { background: var(--laranja); }
 .cal-controles { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .cal-controles .mes-titulo { font-size: 20px; font-weight: 800; color: var(--marinho); min-width: 220px; text-align: center; text-transform: capitalize; }

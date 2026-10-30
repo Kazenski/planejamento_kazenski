@@ -1,4 +1,5 @@
-﻿import { listar, inserir, inserirVarios, atualizar, excluir } from './db.js';
+﻿import { supabase } from './supabase.js';
+import { listar, inserir, inserirVarios, atualizar, excluir } from './db.js';
 import { esc, abrirModal, formulario, mostrarErro, toast, carregando, lista } from './ui.js';
 import { SERIES } from './config.js';
 import { abrirMateriaisCurso } from './curso_materiais.js';
@@ -73,16 +74,20 @@ const CADASTROS = {
       { label: 'Envio de material', valor: (i) => lista(i.emails_material) },
       { label: 'Situação', valor: (i) => situacao(i.ativo) }
     ],
-    campos: async () => [
-      { k: 'nome', label: 'Nome do colégio', type: 'text', req: true, largo: true },
-      { k: 'direcao', label: 'Direção', type: 'text' },
-      { k: 'coordenacao', label: 'Coordenação', type: 'text' },
-      { k: 'supervisao', label: 'Supervisão', type: 'text' },
-      { k: 'emails_copia', label: 'E-mails em cópia', type: 'lista', ajuda: 'Um por linha ou separados por vírgula.' },
-      { k: 'emails_material', label: 'E-mails para envio de material pedagógico', type: 'lista', ajuda: 'Um por linha ou separados por vírgula.' },
-      { k: 'ano', label: 'Ano letivo', type: 'number', req: true, min: 2000, max: 2100, step: 1 },
-      { k: 'ativo', label: 'Colégio ativo', type: 'bool' }
-    ]
+    campos: async () => {
+      const cursos = await listar('cursos', { ordem: 'nome', ajuste: (q) => q.eq('ativo', true) });
+      return [
+        { k: 'nome', label: 'Nome do colégio', type: 'text', req: true, largo: true },
+        { k: 'direcao', label: 'Direção', type: 'text' },
+        { k: 'coordenacao', label: 'Coordenação', type: 'text' },
+        { k: 'supervisao', label: 'Supervisão', type: 'text' },
+        { k: 'emails_copia', label: 'E-mails em cópia', type: 'lista', ajuda: 'Um por linha ou separados por vírgula.' },
+        { k: 'emails_material', label: 'E-mails para envio de material pedagógico', type: 'lista', ajuda: 'Um por linha ou separados por vírgula.' },
+        { k: 'ano', label: 'Ano letivo', type: 'number', req: true, min: 2000, max: 2100, step: 1 },
+        { k: 'ativo', label: 'Colégio ativo', type: 'bool' },
+        { k: 'cursos', label: 'Cursos técnicos oferecidos', type: 'checks', largo: true, opcoes: cursos.map((c) => [c.id, c.nome]), ajuda: 'Escolha os cursos que este colégio oferece. Eles aparecem em Minhas aulas.' }
+      ];
+    }
   },
 
   disciplinas: {
@@ -302,6 +307,10 @@ export async function telaCadastro(main, chave) {
   async function abrirForm(item) {
     const campos = await cfg.campos(ctx);
     const valores = item ? { ...item } : { ano: ctx.ano || anoAtual, ativo: true, serie: 1 };
+    if (item && chave === 'colegios') {
+      const vinculos = await listar('colegio_cursos', { select: 'curso_id', ordem: null, ajuste: (q) => q.eq('colegio_id', item.id) });
+      valores.cursos = vinculos.map((v) => v.curso_id);
+    }
     if (item && chave === 'turmas') valores.colegio_id = item.colegio_id;
     if (item && chave === 'aulas') {
       valores.turma_id = item.turma_id;
@@ -314,14 +323,29 @@ export async function telaCadastro(main, chave) {
       onSubmit: async (fechar) => {
         const dados = f.ler();
         for (const k of Object.keys(dados)) if (dados[k] === null && k !== 'emails_copia' && k !== 'emails_material') delete dados[k];
+        let cursosDoColegio = null;
         if (chave === 'colegios') {
           dados.emails_copia = dados.emails_copia || [];
           dados.emails_material = dados.emails_material || [];
+          cursosDoColegio = dados.cursos || [];
+          delete dados.cursos;
         }
         if (chave === 'turmas' && dados.serie) dados.serie = Number(dados.serie);
         if (chave === 'turmas') dados.curso = cfg.cursosCache?.find((c) => c.id === dados.curso_id)?.nome ?? null;
+        let id = item?.id;
         if (item) await atualizar(cfg.tabela, item.id, dados);
-        else await inserir(cfg.tabela, dados);
+        else {
+          const [novo] = await inserir(cfg.tabela, dados);
+          id = novo.id;
+        }
+        if (chave === 'colegios') {
+          const { error: erroApagar } = await supabase.from('colegio_cursos').delete().eq('colegio_id', id);
+          if (erroApagar) throw erroApagar;
+          if (cursosDoColegio.length) {
+            const { error } = await supabase.from('colegio_cursos').insert(cursosDoColegio.map((curso_id) => ({ colegio_id: id, curso_id })));
+            if (error) throw error;
+          }
+        }
         fechar();
         toast('Salvo com sucesso.', 'ok');
         carregarLista();

@@ -1,6 +1,7 @@
 import { getSessao, aoMudarSessao, entrarComGoogle, entrarComSenha, sair } from './auth.js';
 import { mostrarErro, carregando } from './ui.js';
 import { telaPainel, sairDoPainel } from './painel.js';
+import { telaMinhasAulas } from './minhas_aulas.js';
 import { telaCalendario } from './calendario.js';
 import { telaPlanos } from './planos.js';
 import { telaMateriais } from './materiais.js';
@@ -10,6 +11,7 @@ import { telaConfiguracoes } from './configuracoes.js';
 
 const ROTAS = {
   painel: telaPainel,
+  'minhas-aulas': telaMinhasAulas,
   calendario: telaCalendario,
   planos: telaPlanos,
   materiais: telaMateriais,
