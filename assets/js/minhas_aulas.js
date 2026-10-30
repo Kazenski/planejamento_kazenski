@@ -2,12 +2,12 @@ import { supabase } from './supabase.js';
 import { listar, inserirVarios, atualizar } from './db.js';
 import { esc, toast, mostrarErro, carregando } from './ui.js';
 import { DIAS_SEMANA, SERIES } from './config.js';
-import { classificarDia, ymd } from './regras.js';
+import { classificarDia } from './regras.js';
+import { GRADE_PADRAO } from './horarios_colegio.js';
 
-// Horário semanal do professor. Grade de 7 períodos: 1, 2 e 3 antes do recreio; 4 é o recreio; 5, 6 e 7 depois.
+// Horário semanal do professor. A grade vem de cada colégio (Cadastros > Colégios > Horários).
+// Colégio sem grade usa o padrão do sistema.
 const ANO = new Date().getFullYear();
-const PERIODOS = [1, 2, 3, 4, 5, 6, 7];
-const RECREIO = 4;
 const CORES = ['#FF5000', '#0066FF', '#15803D', '#7C3AED', '#B45309', '#0E7490'];
 
 const estado = {
@@ -38,9 +38,10 @@ function somarDias(dataTexto, n) {
 }
 
 const fmt = (d) => `${d.slice(8)}/${d.slice(5, 7)}`;
+const hora = (t) => (t ? String(t).slice(0, 5) : '');
 
 async function carregar() {
-  const [colegios, colegioCursos, cursos, turmas, vinculos, horarios, eventos] = await Promise.all([
+  const [colegios, colegioCursos, cursos, turmas, vinculos, horarios, eventos, grades] = await Promise.all([
     listar('colegios', { ordem: 'nome', ajuste: (q) => q.eq('ano', ANO) }),
     listar('colegio_cursos', { select: 'colegio_id, curso_id', ordem: null }),
     listar('cursos', { ordem: 'nome' }),
@@ -55,18 +56,52 @@ async function carregar() {
       select: '*, evento_colegios(colegio_id)',
       ordem: 'data',
       ajuste: (q) => q.gte('data', `${ANO}-01-01`).lte('data', `${ANO}-12-31`)
-    })
+    }),
+    listar('colegio_horarios', { ordem: 'ordem' })
   ]);
   const vinculosIds = new Set(vinculos.map((v) => v.id));
+  const gradesPorColegio = new Map();
+  for (const g of grades) {
+    if (!gradesPorColegio.has(g.colegio_id)) gradesPorColegio.set(g.colegio_id, []);
+    gradesPorColegio.get(g.colegio_id).push(g);
+  }
   dados = {
     colegios,
     colegioCursos,
     cursos,
     turmas,
     vinculos,
+    grades: gradesPorColegio,
     horarios: horarios.filter((h) => vinculosIds.has(h.turma_disciplina_id)),
     eventos: eventos.map((e) => ({ ...e, colegios: (e.evento_colegios || []).map((x) => x.colegio_id) }))
   };
+}
+
+// Linhas da grade de um colégio: ordem, tipo ('aula' ou 'intervalo'), rótulo e horários.
+function gradeDoColegio(colegioId) {
+  const cadastrada = dados.grades.get(colegioId);
+  if (cadastrada?.length) return cadastrada;
+  return GRADE_PADRAO.map((l) => ({ ordem: l.ordem, tipo: l.tipo, rotulo: l.rotulo || null, inicio: null, fim: null }));
+}
+
+// Grade exibida: a do colégio escolhido, ou a união das grades de todos os colégios (uma linha por ordem).
+function linhasDaGrade() {
+  if (estado.colegioId !== 'todos') return gradeDoColegio(estado.colegioId);
+  const ids = dados.colegios.map((c) => c.id);
+  const todas = ids.length ? ids.map(gradeDoColegio) : [gradeDoColegio(null)];
+  const maior = Math.max(...todas.map((g) => g.length));
+  const linhas = [];
+  for (let o = 1; o <= maior; o++) {
+    const naOrdem = todas.map((g) => g.find((l) => l.ordem === o)).filter(Boolean);
+    const algumaAula = naOrdem.some((l) => l.tipo === 'aula');
+    const rotulo = naOrdem.find((l) => l.rotulo)?.rotulo || 'Intervalo';
+    linhas.push({ ordem: o, tipo: algumaAula ? 'aula' : 'intervalo', rotulo });
+  }
+  return linhas;
+}
+
+function periodoEhAula(colegioId, ordem) {
+  return gradeDoColegio(colegioId).some((l) => l.ordem === ordem && l.tipo === 'aula');
 }
 
 // Cursos que aparecem no filtro: os do colégio escolhido (ou todos, se nenhum colégio).
@@ -88,7 +123,6 @@ function vinculosVisiveis() {
   return dados.vinculos.filter((v) => turmas.has(v.turma_id));
 }
 
-// Cards do horário que estão dentro do filtro atual.
 function horariosVisiveis() {
   const vinc = new Map(vinculosVisiveis().map((v) => [v.id, v]));
   return dados.horarios
@@ -105,15 +139,19 @@ function calendarioDo(card, data) {
   };
 }
 
+// Na visão geral, a cor é do colégio. Num colégio só, a cor é da disciplina.
+function corDoCard(v) {
+  return estado.colegioId === 'todos' ? cor(v.turmas?.colegios?.nome || '') : cor(v.disciplinas?.nome || v.id);
+}
+
 function cardHtml(card, datasSemana) {
   const v = card.vinculo;
   const data = card.dia_semana ? datasSemana[card.dia_semana - 1] : null;
   const cal = data ? calendarioDo(card, data) : { letivo: true, motivo: '' };
   const desativada = data && !cal.letivo;
-  const cores = cor(v.disciplinas?.nome || v.id);
   return `
     <div class="aula ${desativada ? 'off' : ''}" draggable="${desativada ? 'false' : 'true'}" data-horario="${card.id}"
-      style="border-left-color:${cores}" title="${desativada ? `Sem aula: ${esc(cal.motivo)}` : ''}">
+      style="border-left-color:${corDoCard(v)}" title="${desativada ? `Sem aula: ${esc(cal.motivo)}` : ''}">
       <strong>${esc(v.disciplinas?.nome || '—')}</strong>
       <div class="small">${esc(v.turmas?.nome || '')}${estado.colegioId === 'todos' ? ` · ${esc(v.turmas?.colegios?.nome || '')}` : ''}</div>
       ${desativada ? `<div class="small">Sem aula: ${esc(cal.motivo)}</div>` : ''}
@@ -123,16 +161,21 @@ function cardHtml(card, datasSemana) {
 function grade(semana, visiveis) {
   const datas = [0, 1, 2, 3, 4].map((i) => somarDias(semana, i));
   const cabecalho = `<div class="ma-cab">Período</div>${DIAS_SEMANA.slice(1, 6).map((d, i) => `<div class="ma-cab">${d}<span class="small muted" style="display:block">${fmt(datas[i])}</span></div>`).join('')}`;
-  const linhas = PERIODOS.map((p) => {
-    if (p === RECREIO) return '<div class="ma-recreio">Recreio</div>';
+  const linhas = linhasDaGrade().map((l) => {
+    const intervalo = l.tipo === 'intervalo';
+    if (intervalo) {
+      const horas = estado.colegioId !== 'todos' && l.inicio ? ` · ${hora(l.inicio)}–${hora(l.fim)}` : '';
+      return `<div class="ma-recreio">${esc(l.rotulo || 'Intervalo')}${esc(horas)}</div>`;
+    }
     const celulas = [1, 2, 3, 4, 5].map((dia) => {
-      const aqui = visiveis.filter((h) => h.dia_semana === dia && h.periodo === p);
+      const aqui = visiveis.filter((h) => h.dia_semana === dia && h.periodo === l.ordem);
       const conflito = aqui.length > 1;
-      return `<div class="ma-celula ${conflito ? 'conflito' : ''}" data-dia="${dia}" data-periodo="${p}" title="${conflito ? 'Conflito: mais de uma aula neste horário' : ''}">
+      return `<div class="ma-celula ${conflito ? 'conflito' : ''}" data-dia="${dia}" data-periodo="${l.ordem}" title="${conflito ? 'Conflito: mais de uma aula neste horário' : ''}">
         ${aqui.map((h) => cardHtml(h, datas)).join('')}
       </div>`;
     }).join('');
-    return `<div class="ma-rotulo">${p}º período</div>${celulas}`;
+    const horas = estado.colegioId !== 'todos' && l.inicio ? `<span class="small muted">${hora(l.inicio)}–${hora(l.fim)}</span>` : '';
+    return `<div class="ma-rotulo">${l.ordem}º ${horas}</div>${celulas}`;
   }).join('');
   return `<div class="ma-grade">${cabecalho}${linhas}</div>`;
 }
@@ -177,7 +220,7 @@ function desenhar(main) {
         ${vs.length ? vs.map((v) => {
           const ativo = dados.horarios.some((h) => h.turma_disciplina_id === v.id);
           return `<label class="ma-disc">
-            <input type="checkbox" data-leciono="${v.id}" data-aulas="${v.aulas_semana}" ${ativo ? 'checked' : ''}>
+            <input type="checkbox" data-leciono="${v.id}" data-aulas="${v.aulas_semana}" data-colegio="${v.turmas?.colegio_id}" ${ativo ? 'checked' : ''}>
             <span>${esc(v.disciplinas?.nome || '—')} <span class="small muted">· ${v.aulas_semana} aula(s)/sem</span></span>
           </label>`;
         }).join('') : '<p class="small muted">Nenhuma disciplina vinculada a esta turma. Cadastre em Aulas por disciplina.</p>'}
@@ -186,6 +229,9 @@ function desenhar(main) {
 
   const porTurma = contar(visiveis, (h) => `${h.vinculo.turmas?.nome || '—'}${estado.colegioId === 'todos' ? ` · ${h.vinculo.turmas?.colegios?.nome || ''}` : ''}`);
   const porDisc = contar(visiveis, (h) => h.vinculo.disciplinas?.nome || '—');
+  const legenda = estado.colegioId === 'todos' && dados.colegios.length
+    ? `<div class="ma-legenda">${dados.colegios.map((c) => `<span style="--cor:${cor(c.nome)}">${esc(c.nome)}</span>`).join('')}</div>`
+    : '';
 
   main.innerHTML = `
     <div class="pagina-cabecalho">
@@ -222,6 +268,7 @@ function desenhar(main) {
         </div>
 
         <div class="card">
+          ${legenda}
           <div id="ma-bandeja" class="ma-bandeja" data-bandeja="1">
             <strong class="small">Aulas sem dia (arraste para o horário):</strong>
             ${visiveis.filter((h) => !h.dia_semana).map((h) => cardHtml(h, datas)).join('') || '<span class="small muted">Nenhuma aula sem dia.</span>'}
@@ -259,7 +306,6 @@ export async function telaMinhasAulas(main) {
     return;
   }
 
-  // Filtros
   main.onchange = async (e) => {
     const alvo = e.target;
     if (alvo.id === 'ma-colegio') {
@@ -281,7 +327,6 @@ export async function telaMinhasAulas(main) {
     desenhar(main);
   };
 
-  // Navegação de semana
   main.onclick = (e) => {
     if (e.target.closest('#ma-sem-ant')) estado.semana = somarDias(estado.semana, -7);
     else if (e.target.closest('#ma-sem-prox')) estado.semana = somarDias(estado.semana, 7);
@@ -290,7 +335,6 @@ export async function telaMinhasAulas(main) {
     desenhar(main);
   };
 
-  // Arrastar e soltar entre os dias e períodos
   main.ondragstart = (e) => {
     const card = e.target.closest('.aula');
     if (!card || card.getAttribute('draggable') !== 'true') return e.preventDefault();
@@ -319,7 +363,14 @@ export async function telaMinhasAulas(main) {
       if (celula.dataset.bandeja) {
         await atualizar('horario_aulas', id, { dia_semana: null, periodo: null });
       } else {
-        await atualizar('horario_aulas', id, { dia_semana: Number(celula.dataset.dia), periodo: Number(celula.dataset.periodo) });
+        const h = dados.horarios.find((x) => x.id === id);
+        const colegioId = dados.vinculos.find((v) => v.id === h?.turma_disciplina_id)?.turmas?.colegio_id;
+        const ordem = Number(celula.dataset.periodo);
+        if (colegioId && !periodoEhAula(colegioId, ordem)) {
+          toast('Este período é intervalo no colégio desta aula.', 'erro');
+          return;
+        }
+        await atualizar('horario_aulas', id, { dia_semana: Number(celula.dataset.dia), periodo: ordem });
       }
       await recarregarEDesenhar(main);
     } catch (err) { mostrarErro(err); }

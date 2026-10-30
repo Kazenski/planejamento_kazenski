@@ -3,6 +3,7 @@ import { listar, inserir, inserirVarios, atualizar, excluir } from './db.js';
 import { esc, abrirModal, formulario, mostrarErro, toast, carregando, lista } from './ui.js';
 import { SERIES } from './config.js';
 import { abrirMateriaisCurso } from './curso_materiais.js';
+import { abrirHorariosColegio } from './horarios_colegio.js';
 
 const anoAtual = new Date().getFullYear();
 const norm = (s) => String(s || '').trim().toLowerCase();
@@ -292,6 +293,7 @@ export async function telaCadastro(main, chave) {
                 ${cfg.colunas.map((c) => `<td>${c.valor(i)}</td>`).join('')}
                 <td class="acoes-linha">
                   ${chave === 'cursos' ? `<button class="btn pequeno azul" data-materiais="${i.id}" type="button">Materiais</button>` : ''}
+                  ${chave === 'colegios' ? `<button class="btn pequeno azul" data-horarios="${i.id}" type="button">Horários</button>` : ''}
                   <button class="btn pequeno" data-editar="${i.id}" type="button">Editar</button>
                   <button class="btn pequeno perigo" data-excluir="${i.id}" type="button">Excluir</button>
                 </td>
@@ -411,6 +413,10 @@ export async function telaCadastro(main, chave) {
     const materiais = e.target.closest('[data-materiais]');
     if (materiais) {
       abrirMateriaisCurso(dadosAtuais.find((d) => d.id === materiais.dataset.materiais));
+    }
+    const horarios = e.target.closest('[data-horarios]');
+    if (horarios) {
+      abrirHorariosColegio(dadosAtuais.find((d) => d.id === horarios.dataset.horarios), carregarLista);
     }
     if (editar) {
       const item = dadosAtuais.find((d) => d.id === editar.dataset.editar);

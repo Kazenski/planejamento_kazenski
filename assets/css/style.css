@@ -170,7 +170,15 @@ dialog.grande { width: min(1000px, calc(100vw - 32px)); }
 .cal-nav .mes-titulo { font-size: 20px; font-weight: 800; color: var(--marinho); min-width: 260px; text-align: center; text-transform: capitalize; }
 .cal-topo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 
+/* Grade de horários do colégio */
+.grade-linha { display: grid; grid-template-columns: 44px 150px minmax(120px, 1fr) 120px 120px auto; gap: 12px; align-items: end; padding: 10px 0; border-bottom: 1px solid var(--borda); }
+.grade-num { font-weight: 800; color: var(--marinho); font-size: 16px; align-self: center; }
+.grade-linha .campo.linha { align-self: center; }
+@media (max-width: 800px) { .grade-linha { grid-template-columns: 1fr 1fr; } }
+
 /* Minhas aulas */
+.ma-legenda { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; font-size: 13px; }
+.ma-legenda span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; background: var(--cor, #999); }
 .ma-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
 .ma-turma { border: 1px solid var(--borda); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
 .ma-disc { display: flex; gap: 8px; align-items: center; padding: 4px 0; font-size: 14px; cursor: pointer; }
