@@ -133,7 +133,7 @@ Deno.serve(async (req) => {
 
     const corpo = await req.json();
     const habilidades = (await db.from('habilidades').select('id, codigo, descricao')).data ?? [];
-    const materiais = (await db.from('fontes_material').select('nome, categoria')).data ?? [];
+    const materiais = (await db.from('fontes_material').select('id, nome, categoria')).data ?? [];
 
     if (corpo.tipo === 'anual') return json(await gerarAnual(db, user.id, corpo.plano_id, habilidades, materiais, corpo));
     if (corpo.tipo === 'mensal') return json(await gerarMensal(db, user.id, corpo, habilidades, materiais));
@@ -159,7 +159,7 @@ async function vincularHabilidades(db: any, userId: string, planoId: string, cod
 
 async function carregarAnual(db: any, planoId: string) {
   const { data, error } = await db.from('planos_anuais')
-    .select('*, turmas(nome, ano, serie, curso, curso_id, qtd_alunos, observacoes, colegios(nome)), disciplinas(nome)')
+    .select('*, turmas(nome, ano, serie, curso, curso_id, qtd_alunos, observacoes, colegios(nome), cursos(nome)), disciplinas(nome)')
     .eq('id', planoId).single();
   if (error || !data) throw new Error('Plano anual não encontrado.');
   const { data: vinc } = await db.from('turma_disciplinas').select('aulas_semana')
@@ -179,12 +179,12 @@ TAREFA: criar o PLANO ANUAL detalhado da disciplina, para um professor adaptar a
 
 CONTEXTO
 - Colégio: ${plano.turmas?.colegios?.nome}
-- Curso: ${plano.turmas?.curso} · Série: ${plano.turmas?.serie}º ano · Turma: ${plano.turmas?.nome} · Ano letivo: ${plano.ano}
+- Curso: ${plano.turmas?.cursos?.nome || plano.turmas?.curso || 'não informado'} · Série: ${plano.turmas?.serie}º ano · Turma: ${plano.turmas?.nome} · Ano letivo: ${plano.ano}
 - Particularidades da turma: ${plano.turmas?.observacoes || 'nenhuma informada'}
 - Disciplina: ${plano.disciplinas?.nome}
 - Alunos: ${plano.turmas?.qtd_alunos ?? 'não informado'} (somente para cabeçalho)
 - Aulas por semana: ${plano.aulas_semana ?? 'não informado'}
-- Materiais-base cadastrados: ${materiais.filter((m: any) => m.categoria === 'material_base').map((m: any) => m.nome).join('; ') || 'nenhum'}
+- Materiais-base escolhidos para este plano (só estes podem ser citados): ${materiais.filter((m: any) => m.categoria === 'material_base' && (corpo.fonte_ids ?? []).includes(m.id)).map((m: any) => m.nome).join('; ') || 'nenhum'}
 - Modelos do colégio cadastrados: ${materiais.filter((m: any) => m.categoria === 'modelo').map((m: any) => m.nome).join('; ') || 'nenhum'}
 
 CONTEÚDOS DO ANO (use todos, na ordem e no trimestre indicados)
