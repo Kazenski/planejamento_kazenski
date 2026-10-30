@@ -2,6 +2,8 @@
 // A chave GEMINI_API_KEY fica em segredo do Supabase. Nunca vai para o navegador.
 // As gravações usam o token do próprio usuário, então o RLS continua valendo.
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import JSZip from 'npm:jszip@3.10.1';
+import { getDocumentProxy, extractText } from 'npm:unpdf@1';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -205,6 +207,48 @@ PENSAMENTO COMPUTACIONAL
 - PCEMPC01: Resolver problemas por meio do desenvolvimento de algoritmos e implementá-los em linguagens de programação textual.
 - PCEMCD01: Coletar, organizar, visualizar e interpretar conjuntos de dados para extração de informações, conhecimentos, criações de previsões que apoiem a tomada de decisão.`;
 
+// Lê o texto de um documento enviado pelo professor (DOCX, PDF ou TXT), do Storage do próprio usuário.
+async function textoDeArquivo(db: any, caminho: string, nome: string): Promise<string> {
+  const { data: arquivo, error } = await db.storage.from('materiais').download(caminho);
+  if (error || !arquivo) throw new Error('Não foi possível ler o documento enviado.');
+  const buf = await arquivo.arrayBuffer();
+  const ext = String(nome || '').toLowerCase().split('.').pop();
+  let texto = '';
+  if (ext === 'docx') {
+    const zip = await JSZip.loadAsync(buf);
+    const xml = await zip.file('word/document.xml')!.async('string');
+    texto = xml.replace(/<\/w:p>/g, '\n').replace(/<\/w:tc>/g, ' | ').replace(/<[^>]+>/g, '')
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  } else if (ext === 'pdf') {
+    const pdf = await getDocumentProxy(new Uint8Array(buf));
+    const { text } = await extractText(pdf, { mergePages: true });
+    texto = String(text);
+  } else {
+    texto = new TextDecoder().decode(buf);
+  }
+  return texto.replace(/\n{3,}/g, '\n\n').trim().slice(0, 20000);
+}
+
+// Competências gerais da BNCC, como constam no Currículo Base do Ensino Médio do Território Catarinense (Caderno 1, pp. 42-43).
+const COMPETENCIAS_BNCC = `COMPETÊNCIAS GERAIS DA BNCC (texto do CBTC, use como referência para a seção III, projetos e temas transversais):
+1. Valorizar e utilizar os conhecimentos historicamente construídos sobre o mundo físico, social, cultural e digital para entender e explicar a realidade, continuar aprendendo e colaborar para a construção de uma sociedade justa, democrática e inclusiva.
+2. Exercitar a curiosidade intelectual e recorrer à abordagem própria das ciências, incluindo a investigação, a reflexão, a análise crítica, a imaginação e a criatividade, para investigar causas, elaborar e testar hipóteses, formular e resolver problemas e criar soluções (inclusive tecnológicas) com base nos conhecimentos das diferentes áreas.
+3. Valorizar e fruir as diversas manifestações artísticas e culturais, das locais às mundiais, e também participar de práticas diversificadas da produção artístico-cultural.
+4. Utilizar diferentes linguagens – verbal, corporal, visual, sonora e digital –, bem como os conhecimentos das linguagens artística, matemática e científica, para se expressar e partilhar informações, experiências, ideias e sentimentos em diferentes contextos e produzir sentidos que levem ao entendimento mútuo.
+5. Compreender, utilizar e criar tecnologias digitais de informação e comunicação de forma crítica, significativa, reflexiva e ética nas diversas práticas sociais (incluindo as escolares) para se comunicar, acessar e disseminar informações, produzir conhecimentos, resolver problemas e exercer protagonismo e autoria na vida pessoal e coletiva.
+6. Valorizar a diversidade de saberes e vivências culturais e apropriar-se de conhecimentos e experiências que lhe possibilitem entender as relações próprias do mundo do trabalho e fazer escolhas alinhadas ao exercício da cidadania e ao seu projeto de vida, com liberdade, autonomia, consciência crítica e responsabilidade.
+7. Argumentar com base em fatos, dados e informações confiáveis, para formular, negociar e defender ideias, pontos de vista e decisões comuns que respeitem e promovam os direitos humanos, a consciência socioambiental e o consumo responsável em âmbito local, regional e global, com posicionamento ético em relação ao cuidado de si mesmo, dos outros e do planeta.
+8. Conhecer-se, apreciar-se e cuidar de sua saúde física e emocional, compreendendo-se na diversidade humana e reconhecendo suas emoções e as dos outros, com autocrítica e capacidade para lidar com elas.
+9. Exercitar a empatia, o diálogo, a resolução de conflitos e a cooperação, fazendo-se respeitar e promovendo o respeito ao outro e aos direitos humanos, com acolhimento e valorização da diversidade de indivíduos e de grupos sociais, seus saberes, identidades, culturas e potencialidades, sem preconceitos de qualquer natureza.
+10. Agir pessoal e coletivamente com autonomia, responsabilidade, flexibilidade, resiliência e determinação, tomando decisões com base em princípios éticos, democráticos, inclusivos, sustentáveis e solidários.`;
+
+// Habilidades gerais dos eixos estruturantes (CBTC, Quadro 3). Texto de referência, sem códigos.
+const EIXOS_CBTC = `HABILIDADES DOS EIXOS ESTRUTURANTES (CBTC, Quadro 3, texto de referência para projetos integradores e temas transversais):
+- Investigação científica: identificar, selecionar, processar e analisar dados, fatos e evidências com curiosidade, atenção, criticidade e ética; posicionar-se com base em critérios científicos, éticos e estéticos; utilizar informações e ideias de investigações científicas para criar ou propor soluções para problemas diversos.
+- Processos criativos: reconhecer e analisar manifestações criativas, artísticas e culturais; questionar, modificar e adaptar ideias existentes e criar propostas, obras ou soluções criativas, originais ou inovadoras; difundir novas ideias, propostas ou soluções por diferentes linguagens, mídias e plataformas.
+- Mediação e intervenção sociocultural: reconhecer e analisar questões sociais, culturais e ambientais; compreender e considerar a situação, a opinião e o sentimento do outro, agindo com empatia, flexibilidade e resiliência; participar ativamente da proposição, implementação e avaliação de soluções para problemas socioculturais e/ou ambientais.
+- Empreendedorismo, autoconhecimento e projeto de vida: reconhecer e utilizar qualidades e fragilidades pessoais para superar desafios; utilizar estratégias de planejamento, organização e empreendedorismo para estabelecer e adaptar metas e realizar projetos pessoais e produtivos; refletir continuamente sobre seu desenvolvimento e seus objetivos presentes e futuros.`;
+
 // Distribui as aulas de cada trimestre para o total pedido (aulas por semana × semanas), proporcionalmente.
 function ajustarCargaAulas(plano: any, porTrimestre: number) {
   if (!porTrimestre) return plano;
@@ -247,6 +291,10 @@ TAREFA: criar o PLANO ANUAL detalhado da disciplina, no formato do modelo de pla
 ${MODELO_SECOES}
 
 ${COMPETENCIAS_EIXO}
+
+${COMPETENCIAS_BNCC}
+
+${EIXOS_CBTC}
 
 HABILIDADES: para cada conteúdo, vincule no máximo 3 códigos do CATÁLOGO DE HABILIDADES, só os que tratam diretamente do objeto do conhecimento. Para ensino médio, use os códigos EM13CO e não use códigos EF (ensino fundamental). Use só códigos desse catálogo. Nas competências gerais e específicas, use os textos de eixo listados acima e o texto da BNCC quando houver.
 
